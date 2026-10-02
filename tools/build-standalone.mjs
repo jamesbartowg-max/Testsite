@@ -1,4 +1,5 @@
-// Baut eine einzelne HTML-Datei mit allen Daten, Styles und Skripten (kein Server nötig).
+// Baut eine einzelne HTML-Datei mit allen Daten, Styles und Skripten.
+// Schriften (fonts/) und die Match-Animation (media/) werden relativ geladen und müssen danebenliegen.
 //   node tools/build-standalone.mjs            → dist/lunchly.html (komplettes Dokument)
 //   node tools/build-standalone.mjs --fragment → dist/lunchly-fragment.html (ohne <html>/<head>, zum Einbetten)
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -10,15 +11,13 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 const fragment = process.argv.includes("--fragment");
 
 const html = read("index.html");
-const css = read("css/style.css");
+const css = read("css/style.css").replaceAll('url("../fonts/', 'url("fonts/');
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
 const js = scripts.map((src) => `/* ${src} */\n${read(src)}`).join("\n");
-const fonts = html.match(/<link rel="stylesheet" href="(https:\/\/fonts[^"]+)">/)[1];
 const body = html.match(/<body>([\s\S]*?)\n\s*<script/)[1].trim();
 
 const embedFlag = "window.LUNCHLY = window.LUNCHLY || { dishes: [], desserts: [] }; LUNCHLY.embedded = true;";
 const inner = `<title>Lunchly</title>
-<link rel="stylesheet" href="${fonts}">
 <style>
 ${css}</style>
 ${body}

@@ -1,9 +1,9 @@
 /* Lunchly Service Worker – Network-first, Cache als Offline-Fallback */
-const CACHE = "lunchly-v7";
+const CACHE = "lunchly-v11";
 const ASSETS = [
   "./", "index.html", "css/style.css", "js/app.js",
   "js/data/dishes-deutschland.js", "js/data/dishes-europa.js", "js/data/dishes-international.js", "js/data/desserts.js",
-  "manifest.webmanifest", "icon.svg",
+  "manifest.webmanifest", "icon.svg", "media/match-intro.mp4", "media/match-intro.webm", "media/match-intro-dark.mp4", "media/match-intro-dark.webm", "fonts/Yellowtail.woff2", "fonts/DMSans.woff2",
 ];
 
 self.addEventListener("install", (e) => {
