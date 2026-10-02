@@ -13,7 +13,7 @@
 - **Dessert-Bonus-Swipes:** An manchen Tagen werden 1–2 von 25 Desserts zufällig eingemischt
 - **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 1 pro Tag), Rückgängig, Match-Popup
 - **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Kompromiss-Ideen
-- Helles Design im Airbnb/Tinder-Stil (bewusst nur ein helles Theme), PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
+- Helles Design im Airbnb/Tinder-Stil. Dark Mode nur manuell über den Mond-Button oben rechts (wird auf dem Gerät gespeichert, Systemeinstellung wird ignoriert). PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
 
 ## Einstellungen
 

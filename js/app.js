@@ -63,7 +63,20 @@
     pin: svg(22, `<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>`),
     spark: svg(22, `<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
     quote: svg(22, `<path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
+    moon: svg(21, `<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>`),
+    sun: svg(21, `<circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>`),
   };
+
+  // ── Dark Mode: nur manuell per Button, gespeichert auf dem Gerät ──
+  const THEME_KEY = "lunchly.theme";
+  let dark = false;
+  try { dark = localStorage.getItem(THEME_KEY) === "dark"; } catch { /* privater Modus */ }
+  function applyTheme() {
+    document.documentElement.classList.toggle("dark-mode", dark);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = dark ? "#121212" : "#ffffff";
+  }
+  applyTheme();
   const logo = () => `<span class="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 15h24a12 12 0 01-24 0z" fill="currentColor"/><path d="M11 3.5c-2 2.5 2 4 0 7M16 2.5c-2 2.5 2 4 0 7M21 3.5c-2 2.5 2 4 0 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><span>lunchly</span></span>`;
 
   const store = {
@@ -382,7 +395,8 @@
     if (focusEl) focusEl.focus({ preventScroll: true });
   }
 
-  const topbar = (extra = "") => `<header class="topbar">${logo()}${extra}</header>`;
+  const themeBtn = () => `<button class="icon-btn" data-act="theme" aria-label="${dark ? "Hellen Modus einschalten" : "Dunklen Modus einschalten"}" aria-pressed="${dark}">${dark ? ICON.sun : ICON.moon}</button>`;
+  const topbar = (extra = "") => `<header class="topbar">${logo()}${themeBtn()}${extra}</header>`;
   const menuBtn = () => `<button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button>`;
 
   function previewCard(d, cls) {
@@ -860,6 +874,13 @@
     copy: (el) => copy(el.dataset.v),
     share: (el) => { navigator.share({ title: "Lunchly", text: el.dataset.v }).catch(() => {}); },
     roulette,
+    theme: () => {
+      dark = !dark;
+      try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); } catch { /* privater Modus */ }
+      applyTheme();
+      render();
+      toast(dark ? "Dunkler Modus an" : "Heller Modus an");
+    },
   };
 
   document.addEventListener("click", (e) => {

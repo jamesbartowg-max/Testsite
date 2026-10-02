@@ -1,7 +1,13 @@
 /* Lunchly — helles Airbnb-Layout mit Tinder-Swipe: weiße Flächen, Rausch-Pink als einziger Akzent,
-   Gerichte wie Inserate auf pastelligem „Studio“-Hintergrund. Bewusst nur ein (helles) Theme. */
+   Gerichte wie Inserate. Standard ist hell; der Dark Mode wird nur manuell per Button eingeschaltet
+   (Klasse .dark-mode auf <html>), unabhängig von der Systemeinstellung. */
 :root {
   --bg: #ffffff;
+  --surface: #ffffff;
+  --media: #ffffff;   /* Bildfläche, solange kein Foto da ist */
+  --float: rgba(255, 255, 255, .92);
+  --field: #b0b0b0;
+  --av0: #222222;
   --bg-soft: #f7f7f7;
   --ink: #222222;
   --ink-2: #6a6a6a;
@@ -26,6 +32,28 @@
   --font: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-script: "Yellowtail", "Brush Script MT", cursive;
   color-scheme: light;
+}
+:root.dark-mode {
+  --bg: #121212;
+  --surface: #1c1c1e;
+  --media: #2a2a2d;
+  --float: rgba(28, 28, 30, .92);
+  --field: #5a5a5f;
+  --av0: #48484a;
+  --bg-soft: #232326;
+  --ink: #f2f2f2;
+  --ink-2: #a1a1a6;
+  --line: #3a3a3c;
+  --line-soft: #2c2c2e;
+  --rausch: #ff4d6d;
+  --rausch-dark: #ff6b85;
+  --rausch-soft: #3a1820;
+  --hl: 66%;
+  --shadow-card: 0 6px 20px rgba(0, 0, 0, .55);
+  --shadow-float: 0 8px 28px rgba(0, 0, 0, .7);
+  --shadow-btn: 0 2px 10px rgba(0, 0, 0, .5), 0 0 0 1px rgba(255, 255, 255, .06);
+  --overlay: rgba(0, 0, 0, .65);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -77,7 +105,7 @@ p { margin: 0; }
   width: 32px; height: 32px; border-radius: 50%; flex: none;
   display: grid; place-items: center; font-weight: 600; font-size: 14px; color: #fff;
 }
-.av.p0 { background: var(--ink); }
+.av.p0 { background: var(--av0); }
 .av.p1 { background: var(--rausch); }
 .av.big { width: 88px; height: 88px; font-size: 36px; border: 4px solid var(--bg); box-shadow: var(--shadow-card); }
 
@@ -99,7 +127,7 @@ p { margin: 0; }
 .deck { position: relative; flex: 1; min-height: 0; margin-block: 14px 6px; }
 .card {
   position: absolute; inset: 0; border-radius: 16px; overflow: hidden;
-  background: var(--bg); box-shadow: var(--shadow-card);
+  background: var(--surface); box-shadow: var(--shadow-card);
   display: flex; flex-direction: column;
   touch-action: none; user-select: none; -webkit-user-select: none;
   will-change: transform;
@@ -108,18 +136,18 @@ p { margin: 0; }
 .card.dragging { transition: none; cursor: grabbing; }
 .card.behind { transform: scale(.95) translateY(12px); pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
 
-.media { position: relative; overflow: hidden; background: var(--bg); }
+.media { position: relative; overflow: hidden; background: var(--media); }
 .media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
 .card .media { flex: 1 1 auto; min-height: 0; border-bottom: 1px solid var(--line-soft); }
 
 .badge {
   position: absolute; left: 12px; top: 12px; z-index: 2;
-  background: var(--bg); color: var(--ink); font-size: 13px; font-weight: 600;
+  background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600;
   padding: 6px 12px; border-radius: 999px; box-shadow: 0 1px 4px rgba(0, 0, 0, .14);
 }
 .media-btn {
   position: absolute; right: 12px; top: 12px; z-index: 2; width: 34px; height: 34px; border-radius: 50%; border: 0;
-  background: rgba(255, 255, 255, .92); color: var(--ink); display: grid; place-items: center;
+  background: var(--float); color: var(--ink); display: grid; place-items: center;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .14);
 }
 
@@ -136,7 +164,7 @@ p { margin: 0; }
 .stamp {
   position: absolute; z-index: 3; top: 30px; padding: 0 10px; border: 4px solid; border-radius: 8px;
   font-size: 34px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
-  opacity: 0; pointer-events: none; background: rgba(255, 255, 255, .7);
+  opacity: 0; pointer-events: none; background: var(--float);
 }
 .stamp.like { left: 18px; color: var(--like); border-color: var(--like); transform: rotate(-14deg); }
 .stamp.nope { right: 18px; color: var(--nope); border-color: var(--nope); transform: rotate(14deg); }
@@ -153,7 +181,7 @@ p { margin: 0; }
 /* ── Aktionsleiste ───────────────────────────── */
 .actions { display: flex; justify-content: center; align-items: center; gap: 18px; padding-block: 10px 6px; }
 .act {
-  border: 0; background: var(--bg); box-shadow: var(--shadow-btn); border-radius: 50%;
+  border: 0; background: var(--surface); box-shadow: var(--shadow-btn); border-radius: 50%;
   display: grid; place-items: center; position: relative; transition: transform .12s;
 }
 .act:active { transform: scale(.88); }
@@ -181,26 +209,27 @@ p { margin: 0; }
 }
 .btn-primary { background: var(--rausch); color: #fff; }
 .btn-primary:hover { background: var(--rausch-dark); }
-.btn-dark { background: var(--ink); color: #fff; }
-.btn-outline { background: var(--bg); color: var(--ink); border: 1px solid var(--ink); }
+.btn-dark { background: var(--ink); color: var(--bg); }
+.btn-outline { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
 .btn-block { width: 100%; }
 .btn-pill { border-radius: 999px; }
 .link-btn { border: 0; background: none; color: var(--ink); font-weight: 600; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; justify-self: start; }
 
-.fieldset { border: 1px solid #b0b0b0; border-radius: 12px; overflow: hidden; }
+.fieldset { border: 1px solid var(--field); border-radius: 12px; overflow: hidden; }
 .fieldset label { display: grid; padding: 10px 14px; }
-.fieldset label + label { border-top: 1px solid #b0b0b0; }
+.fieldset label + label { border-top: 1px solid var(--field); }
 .fieldset small { font-size: 12px; color: var(--ink-2); }
 .fieldset input { border: 0; outline: 0; padding: 2px 0 0; font-size: 16px; background: transparent; min-width: 0; }
 .fieldset label:focus-within { box-shadow: inset 0 0 0 2px var(--ink); border-radius: 12px; }
 textarea.input {
-  width: 100%; min-width: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid #b0b0b0; background: var(--bg);
+  width: 100%; min-width: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--field); background: var(--surface);
   resize: vertical; min-height: 76px; font-size: 14px;
 }
 textarea.input:focus { outline: 0; box-shadow: inset 0 0 0 2px var(--ink); }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .row > * { flex: 1 1 130px; }
+.row > .btn { padding-inline: 14px; white-space: nowrap; }
 .stack { display: grid; gap: 12px; }
 .divider { height: 1px; background: var(--line-soft); }
 
@@ -263,7 +292,7 @@ details[open].panel summary::after { transform: rotate(-135deg); }
   display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 14px; align-items: center;
   background: transparent; border: 0; padding: 0; text-align: left; width: 100%;
 }
-.item .thumb { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+.item .thumb { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: var(--media); border: 1px solid var(--line); }
 .item .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .item .nm { font-weight: 600; font-size: 16px; line-height: 1.25; }
 .item .meta { font-size: 14px; }
@@ -278,14 +307,14 @@ details[open].panel summary::after { transform: rotate(-135deg); }
 .overlay { position: fixed; inset: 0; z-index: 30; background: var(--overlay); display: grid; place-items: end center; animation: fade .2s ease; }
 .sheet {
   width: 100%; max-width: 480px; max-height: 92%; overflow-y: auto;
-  background: var(--bg); border-radius: 16px 16px 0 0;
+  background: var(--surface); border-radius: 16px 16px 0 0;
   padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   animation: rise .28s cubic-bezier(.2, .8, .2, 1);
 }
 .sheet .media { height: 240px; border-bottom: 1px solid var(--line-soft); }
 .sheet-close {
   position: absolute; left: 14px; top: 14px; z-index: 2; width: 34px; height: 34px; border-radius: 50%; border: 0;
-  background: var(--bg); color: var(--ink); display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  background: var(--float); color: var(--ink); display: grid; place-items: center; box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
 }
 .sheet-content { padding: 20px 20px 0; display: grid; gap: 20px; }
 .sheet h2 { font-size: 24px; line-height: 1.2; }
@@ -318,21 +347,21 @@ details[open].panel summary::after { transform: rotate(-135deg); }
 .match-faces { display: flex; align-items: center; }
 .match-faces .av.big:first-child { margin-right: -16px; }
 .match-faces .av.big:last-child { margin-left: -16px; }
-.match-dish { position: relative; width: 112px; height: 112px; border-radius: 50%; overflow: hidden; background: var(--bg); z-index: 1; border: 4px solid var(--bg); box-shadow: var(--shadow-card); }
+.match-dish { position: relative; width: 112px; height: 112px; border-radius: 50%; overflow: hidden; background: var(--media); z-index: 1; border: 4px solid var(--bg); box-shadow: var(--shadow-card); }
 .match-dish img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .match-box .baro { width: 100%; max-width: 300px; text-align: left; }
 .match-box .btn { width: 100%; max-width: 300px; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
-  background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 8px;
+  background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 8px;
   font-weight: 500; font-size: 14px; z-index: 50; max-width: calc(100% - 32px); text-align: center;
   animation: rise .25s ease;
 }
 .bonus-flash { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; pointer-events: none; }
 .bonus-flash span {
   font-size: 22px; font-weight: 700; color: var(--rausch); white-space: nowrap;
-  background: var(--bg); padding: 14px 24px; border-radius: 999px; box-shadow: var(--shadow-float);
+  background: var(--surface); padding: 14px 24px; border-radius: 999px; box-shadow: var(--shadow-float);
   animation: bonus 1.3s ease forwards;
 }
 
