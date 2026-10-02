@@ -63,6 +63,7 @@
     pin: svg(22, `<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>`),
     spark: svg(22, `<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
     quote: svg(22, `<path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
+    clock: svg(20, `<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`),
     moon: svg(21, `<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>`),
     sun: svg(21, `<circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>`),
   };
@@ -162,8 +163,28 @@
   // ── Zustand ───────────────────────────────────────────────
   // st.pair  = { seed, start, players: [{name}, {name}], me, pending }
   // st.days  = { "YYYY-MM-DD": { sw: [[], []], pos: [0, 0], supers, known: [bool, bool], pick } }
-  const st = Object.assign({ pair: null, days: {}, draft: ["", ""] }, store.load());
-  const ui = { view: null, busy: false, flashed: "", sheet: null, afterMatch: null, confirmReset: false };
+  const st = Object.assign({ pair: null, days: {}, draft: ["", ""], streak: { last: null, count: 0 } }, store.load());
+  const ui = { view: null, busy: false, flashed: "", sheet: null, afterMatch: null, confirmReset: false, cardAnim: "", lastCount: null };
+  const buzz = (pattern) => { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* nicht unterstützt */ } };
+
+  // Serie: an wie vielen Tagen in Folge diese Person alle Gerichte geswipt hat
+  function bumpStreak(day) {
+    const s0 = st.streak;
+    if (s0.last === day) return;
+    s0.count = s0.last === addDays(day, -1) ? s0.count + 1 : 1;
+    s0.last = day;
+  }
+  const streakNow = () => (st.streak.last === today() || st.streak.last === addDays(today(), -1) ? st.streak.count : 0);
+
+  // Countdown bis Mitternacht, dann gibt es neue Gerichte
+  function countdownText() {
+    const now = new Date();
+    const mins = Math.max(1, Math.ceil((new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1) - now) / 60000));
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h ? `${h} Std. ${m} Min.` : `${m} Min.`;
+  }
+  const countdownHTML = () => `<p class="countdown">${ICON.clock}<span>Neue Gerichte in <b data-countdown>${countdownText()}</b></span></p>`;
+  setInterval(() => document.querySelectorAll("[data-countdown]").forEach((el) => { el.textContent = countdownText(); }), 30000);
 
   function persist() {
     const cutoff = addDays(today(), -KEEP_DAYS);
@@ -194,7 +215,7 @@
 
   function barHTML(h) {
     let bars = "";
-    for (let i = 1; i <= 10; i++) bars += `<i${i <= h ? ` style="background:${histColor(i)}"` : ""}></i>`;
+    for (let i = 1; i <= 10; i++) bars += `<i style="--i:${i}${i <= h ? `;background:${histColor(i)}` : ""}"></i>`;
     return `<div class="baro-bar" aria-hidden="true">${bars}</div>`;
   }
   function baroHTML(h) {
@@ -524,17 +545,22 @@
     const flashKey = `${day}:${pos}`;
     if (top.kind === "dessert" && ui.flashed !== flashKey) { ui.flashed = flashKey; setTimeout(bonusFlash, 60); }
     const dishNo = ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length;
+    const anim = ui.cardAnim;
+    ui.cardAnim = "";
+    const bump = ui.lastCount != null && count > ui.lastCount;
+    ui.lastCount = count;
+    const streak = streakNow();
     return `<section class="screen" aria-label="Swipen">
       ${topbar(`
-        <button class="icon-btn" data-act="results" aria-label="${count} Matches ansehen">${ICON.matches}${count ? `<span class="dot">${count}</span>` : ""}</button>
+        <button class="icon-btn${bump ? " bump" : ""}" data-act="results" aria-label="${count} Matches ansehen">${ICON.matches}${count ? `<span class="dot">${count}</span>` : ""}</button>
         ${menuBtn()}`)}
       <div class="daypill">
-        <div><strong>Mittagessen für morgen</strong><span>${esc(fmtDay(addDays(day, 1)))} · ${esc(pname(p))} swipt</span></div>
+        <div><strong>Mittagessen für morgen</strong><span>${esc(fmtDay(addDays(day, 1)))} · ${streak >= 2 ? `${streak} Tage in Folge` : `${esc(pname(p))} swipt`}</span></div>
         <span class="count" aria-label="${top.kind === "dessert" ? "Bonus-Karte" : `Gericht ${dishNo} von ${DAILY_DISHES}`}">${top.kind === "dessert" ? "+1" : `${dishNo}/${DAILY_DISHES}`}</span>
       </div>
       <div class="deck">
         ${next ? cardHTML(next, "behind") : ""}
-        ${cardHTML(top, "top")}
+        ${cardHTML(top, `top fill ${anim}`)}
       </div>
       <div class="actions">
         <button class="act sm undo" data-act="undo" aria-label="Rückgängig" ${pos === 0 ? "disabled" : ""}>${ICON.undo}</button>
@@ -559,10 +585,24 @@
         <h1>Fertig für heute, ${esc(pname(me()))}</h1>
         <p>Schick ${esc(o)} deine Swipes. Sobald ${esc(o)} die eigenen zurückschickt, seht ihr eure Matches.</p>
       </div>
+      ${statsHTML(day)}
       ${sharePanel("Deine Swipes von heute", `${esc(o)} öffnet den Link oder fügt ihn bei Lunchly ein.`)}
       ${pastePanel(`Swipes von ${esc(o)} einfügen`)}
+      ${countdownHTML()}
       ${m ? `<button class="btn btn-primary btn-block" data-act="results">Zwischenstand ansehen (${m.dishes.length + m.desserts.length} Matches)</button>` : ""}
     </section>`;
+  }
+
+  function statsHTML(day) {
+    const ds = dayState(day);
+    const mine = ds.sw[me()];
+    const liked = deckFor(day).filter((id, i) => BY_ID.get(id).kind === "dish" && mine[i] > 0).length;
+    const streak = streakNow();
+    return `<div class="stats">
+      <div class="stat"><b>${liked}/${DAILY_DISHES}</b><span>gelikt</span></div>
+      <div class="stat"><b>${SUPERS_PER_DAY - ds.supers}</b><span>Heißhunger</span></div>
+      <div class="stat"><b>${streak}</b><span>${streak === 1 ? "Tag" : "Tage"} in Folge</span></div>
+    </div>`;
   }
 
   function itemHTML(m, pick, extra = "") {
@@ -589,7 +629,7 @@
     else if (n) title = `${n} ${n === 1 ? "Match" : "Matches"}${m.desserts.length ? ` und ${m.desserts.length} Dessert` : ""}`;
     else title = "Heute kein Match";
 
-    const winner = pickD ? `<article class="winner">
+    const winner = pickD ? `<article class="winner fill">
         ${mediaHTML(pickD, { badge: ds.pick ? "Morgen gibt's das" : "Top-Match" })}
         <div class="title-row"><h2>${esc(pickD.n)}</h2></div>
         <p class="meta">${pickD.f} ${esc(pickD.o)} · ${esc(pickD.t)}</p>
@@ -617,7 +657,8 @@
       ${!partnerMissing && iDone && !n ? `<div class="empty"><strong>Diesmal keine Einigung</strong><p class="hint">Unten stehen Gerichte, die wenigstens eine Person wollte. Morgen gibt es ${DAILY_DISHES} neue Gerichte.</p></div>` : ""}
       ${!partnerMissing && m.near.length && n < 3 ? `<div class="stack"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ds.pick, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
       ${!partnerMissing && iDone ? `<div class="divider"></div>${sharePanel("Ergebnis teilen", `Falls ${esc(o)} deine Swipes noch nicht hat, schick sie noch einmal.`)}` : ""}
-      <p class="hint">Morgen gibt es ${DAILY_DISHES} neue Gerichte. Die heutigen pausieren ${BLACKLIST_DAYS} Tage.</p>
+      ${countdownHTML()}
+      <p class="hint">Die heutigen Gerichte pausieren danach ${BLACKLIST_DAYS} Tage.</p>
       <p class="disclaimer">Das Histamin-Barometer ist ein Richtwert. Er basiert auf typischen Zutaten, angelehnt an die SIGHI-Verträglichkeitsliste. Rezepte und Verträglichkeit sind unterschiedlich. Das ist keine medizinische Beratung.</p>
     </section>`;
   }
@@ -678,7 +719,9 @@
   }
 
   function showMatch(d, sup) {
-    openSheet(`<div class="match-box" role="dialog" aria-modal="true" aria-label="Match">
+    buzz([20, 60, 30]);
+    heartBurst();
+    openSheet(`<div class="match-box fill" role="dialog" aria-modal="true" aria-label="Match">
       <h2>It's a Lunch!</h2>
       <p>${esc(pname(0))} und ${esc(pname(1))} haben beide Lust auf <b>${esc(d.n)}</b>${sup ? ", mit Heißhunger" : ""}.</p>
       <div class="match-faces" aria-hidden="true"><span class="av big p0">${esc(initial(pname(0)))}</span><span class="match-dish">${photo(d)}</span><span class="av big p1">${esc(initial(pname(1)))}</span></div>
@@ -686,6 +729,38 @@
       <button class="btn btn-primary btn-pill" data-act="pick" data-id="${d.id}">Das gibt's morgen</button>
       <button class="btn btn-outline btn-pill" data-act="close" data-autofocus>Weiter swipen</button>
     </div>`, "match-pop");
+  }
+
+  // Herzregen beim Match (Canvas, ein kurzer Moment)
+  function heartBurst() {
+    if (reduceMotion()) return;
+    const c = document.createElement("canvas");
+    c.className = "burst";
+    document.body.appendChild(c);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = window.innerWidth, H = window.innerHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    const g = c.getContext("2d");
+    g.scale(dpr, dpr);
+    const colors = ["#ff385c", "#ff6b85", "#fd267a", "#ff9a62", "#ffc1cf"];
+    const parts = Array.from({ length: 46 }, () => ({
+      x: W / 2, y: H * 0.42, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 10 - 3,
+      s: 7 + Math.random() * 10, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.2,
+      c: colors[Math.floor(Math.random() * colors.length)],
+    }));
+    const heart = (p) => {
+      g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.scale(p.s / 16, p.s / 16); g.fillStyle = p.c;
+      g.beginPath(); g.moveTo(0, 5); g.bezierCurveTo(-8, -2, -6, -10, 0, -5); g.bezierCurveTo(6, -10, 8, -2, 0, 5); g.fill(); g.restore();
+    };
+    const t0 = performance.now();
+    const frame = (t) => {
+      const el = (t - t0) / 1000;
+      g.clearRect(0, 0, W, H);
+      g.globalAlpha = Math.max(0, 1 - el / 1.6);
+      parts.forEach((p) => { p.vy += 0.32; p.x += p.vx; p.y += p.vy; p.r += p.vr; heart(p); });
+      if (el < 1.6) requestAnimationFrame(frame); else c.remove();
+    };
+    requestAnimationFrame(frame);
   }
 
   function bonusFlash() {
@@ -710,6 +785,9 @@
     }
     ds.sw[p][i] = val;
     ds.pos[p] = i + 1;
+    ui.cardAnim = "enter";
+    buzz(val === 2 ? [10, 40, 10] : 8);
+    if (ds.pos[p] >= ids.length) bumpStreak(day);
     persist();
     const o = ds.sw[other(p)][i];
     const isMatch = val > 0 && o != null && o > 0;
@@ -729,6 +807,7 @@
     const i = ds.pos[p] - 1;
     if (i < 0) return;
     if (ds.sw[p][i] === 2) ds.supers++;
+    ui.cardAnim = ["back-left", "back-right", "back-up"][ds.sw[p][i]] || "";
     ds.sw[p][i] = null;
     ds.pos[p] = i;
     persist();
@@ -746,6 +825,8 @@
     const [tx, ty, rot] = val === 0 ? [-w * 1.2, 40, -24] : val === 1 ? [w * 1.2, 40, 24] : [0, -h, 0];
     const stamp = $(val === 0 ? ".stamp.nope" : val === 1 ? ".stamp.like" : ".stamp.super", card);
     if (stamp) stamp.style.opacity = 1;
+    const btn = $(`.act.${["nope", "like", "super"][val]}`, app);
+    if (btn) btn.classList.add("armed");
     card.classList.remove("dragging");
     card.style.transform = `translate(${tx}px, ${ty}px) rotate(${rot}deg)`;
     setTimeout(() => { ui.busy = false; commit(val); }, reduceMotion() ? 0 : 280);
@@ -756,6 +837,14 @@
     if (!card) return;
     let sx = 0, sy = 0, dx = 0, dy = 0, dragging = false, id = null;
     const stamps = { like: $(".stamp.like", card), nope: $(".stamp.nope", card), super: $(".stamp.super", card) };
+    const btns = { like: $(".act.like", app), nope: $(".act.nope", app), super: $(".act.super", app) };
+    // Die Aktions-Buttons wachsen mit und färben sich, sobald der Swipe zählt
+    const arm = (name, prog) => {
+      const b = btns[name];
+      if (!b || b.disabled) return;
+      b.style.transform = prog > 0 ? `scale(${1 + 0.18 * Math.min(prog, 1)})` : "";
+      b.classList.toggle("armed", prog >= 1);
+    };
     card.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || ui.busy) return;
       dragging = true; id = e.pointerId; sx = e.clientX; sy = e.clientY; dx = dy = 0;
@@ -769,11 +858,15 @@
       stamps.like.style.opacity = Math.max(0, Math.min(1, dx / 110));
       stamps.nope.style.opacity = Math.max(0, Math.min(1, -dx / 110));
       stamps.super.style.opacity = Math.abs(dx) < 80 ? Math.max(0, Math.min(1, -dy / 130)) : 0;
+      arm("like", dx / 110);
+      arm("nope", -dx / 110);
+      arm("super", Math.abs(dx) < 80 ? -dy / 130 : 0);
     });
     const end = (e) => {
       if (!dragging || e.pointerId !== id) return;
       dragging = false;
       card.classList.remove("dragging");
+      ["like", "nope", "super"].forEach((n) => arm(n, 0));
       if (Math.abs(dx) < 6 && Math.abs(dy) < 6) { card.style.transform = ""; showDetail(card.dataset.id, true); return; }
       if (dx > 110) fly(1);
       else if (dx < -110) fly(0);
@@ -924,6 +1017,15 @@
   }
   window.addEventListener("hashchange", importFromHash);
   if (!importFromHash()) render();
+
+  // Ladebildschirm: kurz das dampfende Logo zeigen, dann ausblenden
+  const splash = $("#splash");
+  if (splash) {
+    setTimeout(() => {
+      splash.classList.add("out");
+      setTimeout(() => splash.remove(), 500);
+    }, reduceMotion() ? 200 : 1400);
+  }
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !L.embedded) {
     navigator.serviceWorker.register("sw.js").catch(() => {});

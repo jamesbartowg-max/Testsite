@@ -13,6 +13,9 @@
 - **Dessert-Bonus-Swipes:** An manchen Tagen werden 1–2 von 25 Desserts zufällig eingemischt
 - **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 1 pro Tag), Rückgängig, Match-Popup
 - **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Kompromiss-Ideen
+- **Ladebildschirm** mit dem Lunchly-Logo, dessen Dampfstreifen sich in Wellen bewegen
+- **Lebendige Details:** Aktions-Buttons wachsen beim Wischen mit und färben sich, Karten rücken animiert nach, das Histamin-Barometer füllt sich, beim Match gibt es Herzregen und eine kurze Vibration (Android), das Match-Herz oben hüpft bei jedem neuen Match
+- **Tagesabschluss:** gelikt / Heißhunger / Tage in Folge (Serie) und ein Countdown bis zu den nächsten 15 Gerichten
 - Helles Design im Airbnb/Tinder-Stil. Dark Mode nur manuell über den Mond-Button oben rechts (wird auf dem Gerät gespeichert, Systemeinstellung wird ignoriert). PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
 
 ## Einstellungen
