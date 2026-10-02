@@ -1,5 +1,5 @@
 /* Lunchly Service Worker – Network-first, Cache als Offline-Fallback */
-const CACHE = "lunchly-v11";
+const CACHE = "lunchly-v13";
 const ASSETS = [
   "./", "index.html", "css/style.css", "js/app.js",
   "js/data/dishes-deutschland.js", "js/data/dishes-europa.js", "js/data/dishes-international.js", "js/data/desserts.js",

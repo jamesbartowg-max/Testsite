@@ -63,6 +63,11 @@
     pin: svg(22, `<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>`),
     spark: svg(22, `<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
     quote: svg(22, `<path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
+    cards: svg(24, `<rect x="6" y="3.5" width="12" height="17" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3 7.5v10M21 7.5v10" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>`),
+    bookmark: svg(24, `<path d="M6.5 3.5h11v17l-5.5-4-5.5 4z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>`),
+    user: svg(24, `<circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.5 20.5c1-4 4-6 7.5-6s6.5 2 7.5 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>`),
+    link: svg(16, `<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.2 1.2M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.2-1.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`),
+    flame: svg(20, `<path d="M12 21c-4 0-6.5-2.6-6.5-6.2 0-3.4 2.6-5.3 3.6-8.3.4 2 1.5 3.1 2.7 3.6.2-2.6 1.4-5 3.7-6.6-.3 2.8 3 5.4 3 9.3C18.5 18.4 16 21 12 21z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>`),
     back: svg(20, `<path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`),
     camera: svg(28, `<path d="M4 8h3.5l1.8-2.5h5.4L16.5 8H20v11H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13.2" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7"/>`),
     clock: svg(20, `<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`),
@@ -93,7 +98,7 @@
     t.textContent = msg;
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
   }
 
   // ── Seeded RNG ────────────────────────────────────────────
@@ -165,10 +170,11 @@
   // ── Zustand ───────────────────────────────────────────────
   // st.pair  = { seed, start, players: [{name}, {name}], me, pending }
   // st.days  = { "YYYY-MM-DD": { sw: [[], []], pos: [0, 0], supers, known: [bool, bool], pick } }
-  const st = Object.assign({ pair: null, days: {}, draft: ["", ""], streak: { last: null, count: 0 }, picks: {}, profile: null }, store.load());
+  const st = Object.assign({ pair: null, days: {}, draft: ["", ""], streak: { last: null, count: 0 }, picks: {}, profile: null, wish: [] }, store.load());
   const ui = {
     view: null, busy: false, flashed: "", sheet: null, afterMatch: null, confirmReset: false, cardAnim: "", lastCount: null,
     onb: "welcome", pairMode: "invite", draftName: undefined, draftPhoto: undefined,
+    wishFilter: "alle", wishKind: "rezept", confirmDelete: null, withDessert: false, backTo: null,
   };
   const buzz = (pattern) => { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* nicht unterstützt */ } };
 
@@ -330,7 +336,7 @@
       <div class="card-body">
         <div class="title-row"><h2>${rankHTML(d.id)}${esc(d.n)}</h2></div>
         ${starsHTML(d.id)}
-        <p class="meta">${d.f} ${esc(d.o)}</p>
+        <p class="meta">${d.f} ${esc(d.o)} · ${kcalText(d.k)}</p>
         <p class="tagline">${esc(d.t)}</p>
         ${baroHTML(d.h)}
         ${tagsHTML(d)}
@@ -468,8 +474,10 @@
     const fn = {
       welcome: renderWelcome, profile: renderProfile, "profile-edit": renderProfile, pair: renderPair,
       invite: renderInvite, join: renderJoin, swipe: renderSwipe, share: renderShare, results: renderResults,
+      me: renderMe, wishbook: renderWishbook, kcal: renderKcal, "kcal-setup": renderKcalSetup,
     }[view] || renderWelcome;
-    app.innerHTML = fn();
+    const tabbed = st.pair && !st.pair.pending && st.profile && TAB_OF[view] && view !== "kcal-setup" && view !== "profile-edit";
+    app.innerHTML = fn() + (tabbed ? tabbarHTML(TAB_OF[view]) : "");
     if (view === "swipe") bindDrag();
     const focusEl = $("[data-autofocus]", app);
     if (focusEl) focusEl.focus({ preventScroll: true });
@@ -477,7 +485,6 @@
 
   const themeBtn = () => `<button class="icon-btn" data-act="theme" aria-label="${dark ? "Hellen Modus einschalten" : "Dunklen Modus einschalten"}" aria-pressed="${dark}">${dark ? ICON.sun : ICON.moon}</button>`;
   const topbar = (extra = "") => `<header class="topbar">${logo()}${themeBtn()}${extra}</header>`;
-  const menuBtn = () => `<button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button>`;
 
   function previewCard(d, cls) {
     return `<article class="card ${cls}" aria-hidden="true">
@@ -551,7 +558,7 @@
     const name = ui.draftName !== undefined ? ui.draftName : (st.profile && st.profile.name) || (invited ? "" : "");
     const photo = ui.draftPhoto !== undefined ? ui.draftPhoto : (st.profile && st.profile.photo) || null;
     const head = editing
-      ? `<header class="onb-head"><button class="icon-btn" data-act="home" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>`
+      ? `<header class="onb-head"><button class="icon-btn" data-act="tab" data-v="me" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>`
       : onbHead("profile");
     return `<section class="screen onb">
       ${head}
@@ -631,21 +638,20 @@
     });
   }
 
-  function sharePanel(title, text, invite = false) {
+  // Swipes oder Einladung verschicken: ein Button, kein Code-Kasten
+  function sendButtons(invite = false) {
     const code = myCode();
-    const url = shareURL(code);
-    const intro = invite
-      ? `${pname(me())} will mit dir jeden Tag das Mittagessen aussuchen. Hier koppeln:`
-      : `Meine Lunchly-Swipes fürs Mittagessen morgen sind fertig:`;
-    const msg = `${intro}\n${url || code}`;
-    return `<div class="panel">
-      <strong>${title}</strong>
-      <p class="hint">${text}</p>
-      <div class="code-box" id="code-box">${esc(url || code)}</div>
-      <div class="row">
-        <button class="btn btn-dark" data-act="copy" data-v="${esc(url || code)}">Link kopieren</button>
-        <a class="btn btn-outline" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Per WhatsApp</a>
-        ${navigator.share ? `<button class="btn btn-outline" data-act="share" data-v="${esc(msg)}">Teilen</button>` : ""}
+    const url = shareURL(code) || code;
+    const o = pname(other(me()));
+    const msg = invite
+      ? `${pname(me())} will mit dir jeden Tag das Mittagessen aussuchen. Hier koppeln:\n${url}`
+      : `Meine Lunchly-Swipes fürs Mittagessen morgen sind fertig:\n${url}`;
+    const label = invite ? "Per WhatsApp einladen" : `Swipes an ${esc(o === DEFAULT_PARTNER ? "deine Begleitung" : o)} senden`;
+    return `<div class="send">
+      <a class="btn btn-primary btn-block" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${label}</a>
+      <div class="send-more">
+        <button class="link-btn" data-act="copy" data-v="${esc(url)}">Link kopieren</button>
+        ${navigator.share ? `<button class="link-btn" data-act="share" data-v="${esc(msg)}">Anders teilen</button>` : ""}
       </div>
     </div>`;
   }
@@ -673,7 +679,8 @@
         <h1>Lade ${esc(o)} ein</h1>
         <p>Schick ${esc(raw === DEFAULT_PARTNER ? "ihr oder ihm" : raw)} diesen Link. Danach bekommt ihr jeden Tag dieselben ${DAILY_DISHES} Gerichte, jede Person auf dem eigenen Handy.</p>
       </div>
-      ${sharePanel("Einladungs-Link", "Wer den Link öffnet, erstellt kurz ein Profil und ist dann mit dir gekoppelt.", true)}
+      ${sendButtons(true)}
+      <p class="hint">Wer den Link öffnet, erstellt kurz ein Profil und ist dann mit dir gekoppelt.</p>
       <button class="btn btn-primary btn-block" data-act="home" data-autofocus>Gerichte von heute swipen</button>
     </section>`;
   }
@@ -714,13 +721,9 @@
     const dishNo = ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length;
     const anim = ui.cardAnim;
     ui.cardAnim = "";
-    const bump = ui.lastCount != null && count > ui.lastCount;
-    ui.lastCount = count;
     const streak = streakNow();
     return `<section class="screen" aria-label="Swipen">
-      ${topbar(`
-        <button class="icon-btn${bump ? " bump" : ""}" data-act="results" aria-label="${count} Matches ansehen">${ICON.matches}${count ? `<span class="dot">${count}</span>` : ""}</button>
-        ${menuBtn()}`)}
+      ${topbar()}
       <div class="daypill">
         ${avHTML(p, "md")}
         <div><strong>Mittagessen für morgen</strong><span>${esc(fmtDay(addDays(day, 1)))} · ${streak >= 2 ? `${streak} Tage in Folge` : `${esc(pname(p))} swipt`}</span></div>
@@ -737,7 +740,6 @@
         <button class="act lg like" data-act="like" aria-label="Lecker">${ICON.like}</button>
         <button class="act sm info" data-act="info" aria-label="Infos zum Gericht">${ICON.info}</button>
       </div>
-      <p class="swipe-hint">Links: Nö · Rechts: Lecker · Hoch: Heißhunger</p>
     </section>`;
   }
 
@@ -747,16 +749,16 @@
     const ds = dayState(day);
     const m = ds.known[other(me())] ? computeMatches(day) : null;
     return `<section class="screen scroll">
-      ${topbar(menuBtn())}
+      ${topbar()}
       <div class="page-head">
         <span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>
         <h1>Fertig für heute, ${esc(pname(me()))}</h1>
-        <p>Schick ${esc(o)} deine Swipes. Tippst du danach auf den Link von ${esc(o)}, seht ihr eure Matches.</p>
+        <p>Sobald ${esc(o)} auch fertig ist, findest du eure Matches unter „Morgen“.</p>
       </div>
       ${statsHTML(day)}
-      ${sharePanel("Deine Swipes von heute", `${esc(o)} öffnet den Link oder fügt ihn bei Lunchly ein.`)}
+      ${sendButtons()}
+      ${m ? `<button class="btn btn-outline btn-block" data-act="tab" data-v="results">Zwischenstand: ${m.dishes.length + m.desserts.length} Matches</button>` : ""}
       ${countdownHTML()}
-      ${m ? `<button class="btn btn-primary btn-block" data-act="results">Zwischenstand ansehen (${m.dishes.length + m.desserts.length} Matches)</button>` : ""}
     </section>`;
   }
 
@@ -816,35 +818,219 @@
         ${mediaHTML(pickD, { badge: ds.pick ? "Morgen gibt's das" : "Top-Match" })}
         <div class="title-row"><h2>${rankHTML(pickD.id)}${esc(pickD.n)}</h2></div>
         ${starsHTML(pickD.id)}
-        <p class="meta">${pickD.f} ${esc(pickD.o)} · ${esc(pickD.t)}</p>
+        <p class="meta">${pickD.f} ${esc(pickD.o)} · ${kcalText(pickD.k)}</p>
         ${baroHTML(pickD.h)}
         ${fitHTML(pickD.h)}
         <div class="stack">
-          ${ds.pick ? "" : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
+          ${ds.pick
+            ? `<button class="btn btn-primary btn-block" data-act="kcal">${ICON.flame} Tagesbilanz ansehen</button>`
+            : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
           <button class="btn btn-outline btn-block" data-act="detail" data-id="${pickD.id}">Infos und Bestell-Tipp</button>
         </div>
       </article>` : "";
 
     return `<section class="screen scroll">
-      ${topbar(menuBtn())}
+      ${topbar()}
       <div class="page-head">
         <span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>
         <h1>${title}</h1>
         ${m.agree != null && !partnerMissing ? `<p class="agree">Ihr wart euch bei <b>${m.agree} %</b> der ${m.both} Karten einig.</p>` : ""}
       </div>
-      ${!iDone ? `<button class="btn btn-primary btn-block" data-act="home">Weiter swipen</button>` : ""}
-      ${partnerMissing && iDone ? sharePanel("Deine Swipes von heute", `Schick sie ${esc(o)}. Dann seht ihr beide die Matches.`) : ""}
+      ${!iDone ? `<button class="btn btn-primary btn-block" data-act="tab" data-v="today">Weiter swipen</button>` : ""}
+      ${partnerMissing && iDone ? sendButtons() : ""}
       ${winner}
-      ${n > 1 ? `<button class="btn btn-outline btn-block" data-act="roulette">Zufall entscheiden lassen</button>` : ""}
+      ${n > 1 && !ds.pick ? `<button class="btn btn-outline btn-block" data-act="roulette">Zufall entscheiden lassen</button>` : ""}
       ${n ? `<div class="divider"></div><div class="stack"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
       ${m.desserts.length ? `<div class="stack"><div class="sec-title"><h2>Dessert-Matches</h2><span>Histamin</span></div><div class="list">${m.desserts.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
       ${!partnerMissing && iDone && !n ? `<div class="empty"><strong>Diesmal keine Einigung</strong><p class="hint">Unten stehen Gerichte, die wenigstens eine Person wollte. Morgen gibt es ${DAILY_DISHES} neue Gerichte.</p></div>` : ""}
       ${!partnerMissing && m.near.length && n < 3 ? `<div class="stack"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ds.pick, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
-      ${!partnerMissing && iDone ? `<div class="divider"></div>${sharePanel("Ergebnis teilen", `Falls ${esc(o)} deine Swipes noch nicht hat, schick sie noch einmal.`)}` : ""}
       ${countdownHTML()}
-      <p class="hint">Die heutigen Gerichte pausieren danach ${BLACKLIST_DAYS} Tage.</p>
-      ${favoritesHTML(5)}
-      <p class="disclaimer">Das Histamin-Barometer ist ein Richtwert. Er basiert auf typischen Zutaten, angelehnt an die SIGHI-Verträglichkeitsliste. Rezepte und Verträglichkeit sind unterschiedlich. Das ist keine medizinische Beratung.</p>
+      <p class="disclaimer">Die heutigen Gerichte pausieren danach ${BLACKLIST_DAYS} Tage. Das Histamin-Barometer ist ein Richtwert anhand typischer Zutaten, angelehnt an die SIGHI-Verträglichkeitsliste. Keine medizinische Beratung.</p>
+    </section>`;
+  }
+
+  // ── Untere Navigation (Tabs wie bei Airbnb) ───────────────
+  const TABS = [["today", "Swipen", "cards"], ["results", "Morgen", "matches"], ["wishbook", "Wunschbuch", "bookmark"], ["me", "Profil", "user"]];
+  const TAB_OF = { swipe: "today", share: "today", results: "results", kcal: "results", wishbook: "wishbook", me: "me", "kcal-setup": "me", "profile-edit": "me", invite: "me" };
+  function tabbarHTML(active) {
+    const m = computeMatches(today());
+    const count = m.dishes.length + m.desserts.length;
+    const bump = ui.lastCount != null && count > ui.lastCount;
+    ui.lastCount = count;
+    return `<nav class="tabbar" aria-label="Hauptnavigation">${TABS.map(([v, label, icon]) => `
+      <button class="tab${active === v ? " on" : ""}${v === "results" && bump ? " bump" : ""}" data-act="tab" data-v="${v}" ${active === v ? 'aria-current="page"' : ""}>
+        <span class="tab-ico">${ICON[icon]}${v === "results" && count ? `<span class="dot">${count}</span>` : ""}</span><span>${label}</span>
+      </button>`).join("")}</nav>`;
+  }
+
+  // ── Profil-Tab ────────────────────────────────────────────
+  function renderMe() {
+    const o = pname(other(me()));
+    const body = st.profile.body;
+    const row = (act, label, value = "", extra = "") => `<button class="menu-row" data-act="${act}" ${extra}><span>${label}</span>${value ? `<span class="row-val">${value}</span>` : ""}</button>`;
+    return `<section class="screen scroll">
+      ${topbar()}
+      <div class="me-head">${avHTML(me(), "xl")}<div><h1>${esc(st.profile.name)}</h1><span class="hint">Gekoppelt mit ${esc(o)}</span></div></div>
+      <div class="rows">
+        ${row("profile", "Profil bearbeiten")}
+        ${row("kcal-setup", "Kalorien-Ziel", body ? `${fmtNum(kcalTarget(body))} kcal am Tag` : "Einrichten")}
+        <button class="menu-row switch-row" data-act="theme" aria-pressed="${dark}"><span>Dunkler Modus</span><span class="switch" aria-hidden="true"></span></button>
+        ${row("invite", "Einladungs-Link teilen")}
+        ${row("paste-link", "Link einfügen")}
+      </div>
+      ${favoritesHTML(10) || `<div class="empty"><strong>Noch keine Lieblingsgerichte</strong><p class="hint">Jedes Gericht, das ihr wählt, bekommt Sterne. Die meistgewählten landen hier.</p></div>`}
+      <p class="hint">${DAILY_DISHES} Gerichte pro Tag · Pause nach dem Swipen: ${BLACKLIST_DAYS} Tage</p>
+      <button class="menu-row danger" data-act="reset">${ui.confirmReset ? "Wirklich entkoppeln? Zum Bestätigen tippen" : "Kopplung aufheben"}</button>
+    </section>`;
+  }
+
+  // ── Wunschbuch ────────────────────────────────────────────
+  const WISH_KINDS = [["rezept", "Rezept"], ["restaurant", "Restaurant"], ["link", "Link"], ["idee", "Idee"]];
+  const wishLabel = (k) => (WISH_KINDS.find(([v]) => v === k) || WISH_KINDS[3])[1];
+  const domainOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } };
+  function renderWishbook() {
+    const f = ui.wishFilter;
+    const items = st.wish.filter((w) => f === "alle" || w.kind === f);
+    const chips = [["alle", "Alle"], ...WISH_KINDS.map(([v, l]) => [v, l === "Idee" ? "Ideen" : l === "Link" ? "Links" : l + (l.endsWith("t") ? "e" : "s")])];
+    return `<section class="screen scroll">
+      ${topbar()}
+      <div class="page-head">
+        <h1>Wunschbuch</h1>
+        <p>Rezepte, Links, Restaurants und Ideen an einem Ort.</p>
+      </div>
+      <button class="btn btn-primary btn-block" data-act="wish-new">Eintrag hinzufügen</button>
+      <div class="chips slide">${chips.map(([v, l]) => `<button type="button" data-act="wish-filter" data-v="${v}" aria-pressed="${f === v}">${l}</button>`).join("")}</div>
+      ${items.length ? `<div class="wish-list">${items.map((w) => {
+        const d = w.dishId && BY_ID.get(w.dishId);
+        return `<button class="wish" data-act="wish-open" data-id="${w.id}">
+          <span class="wish-kind">${wishLabel(w.kind)}</span>
+          <strong>${esc(w.title)}</strong>
+          ${w.note ? `<span class="wish-note">${esc(w.note)}</span>` : ""}
+          ${w.url || d ? `<span class="wish-meta">${w.url ? `${ICON.link} ${esc(domainOf(w.url) || w.url)}` : ""}${w.url && d ? " · " : ""}${d ? `Gericht: ${esc(d.n)}` : ""}</span>` : ""}
+        </button>`;
+      }).join("")}</div>`
+      : `<div class="empty"><strong>${f === "alle" ? "Noch nichts im Wunschbuch" : "Hier ist noch nichts"}</strong><p class="hint">Speichert Rezepte zum Nachkochen, Lieblingsrestaurants oder Links. Bei jedem Gericht gibt es dafür auch „Ins Wunschbuch“.</p></div>`}
+    </section>`;
+  }
+
+  function wishForm(w = {}) {
+    ui.wishKind = w.kind || ui.wishKind || "rezept";
+    openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="${w.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}">
+      <div class="menu-head"><strong>${w.id ? "Eintrag bearbeiten" : "Neuer Eintrag"}</strong></div>
+      <div class="chips" id="wish-kind">${WISH_KINDS.map(([v, l]) => `<button type="button" data-act="wish-kind" data-v="${v}" aria-pressed="${ui.wishKind === v}">${l}</button>`).join("")}</div>
+      <div class="fieldset" style="margin-top:14px">
+        <label><small>Titel</small><input id="w-title" maxlength="80" placeholder="z. B. Omas Rouladen" value="${esc(w.title || "")}"></label>
+        <label><small>Link (optional)</small><input id="w-url" inputmode="url" placeholder="https://" value="${esc(w.url || "")}"></label>
+      </div>
+      <label class="field-label" for="w-note">Notiz oder Rezept</label>
+      <textarea class="input tall" id="w-note" placeholder="Zutaten, Zubereitung, Adresse, Öffnungszeiten …">${esc(w.note || "")}</textarea>
+      <div class="row" style="margin-top:14px">
+        <button class="btn btn-outline" data-act="close">Abbrechen</button>
+        <button class="btn btn-primary" data-act="wish-save" data-id="${w.id || ""}" data-dish="${w.dishId || ""}">Speichern</button>
+      </div>
+    </div>`);
+    const t = $("#w-title", sheetRoot);
+    if (t) t.focus({ preventScroll: true });
+  }
+
+  function wishDetail(id) {
+    const w = st.wish.find((x) => x.id === id);
+    if (!w) return;
+    const d = w.dishId && BY_ID.get(w.dishId);
+    const del = ui.confirmDelete === id;
+    openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="${esc(w.title)}">
+      <div class="menu-head"><span class="wish-kind">${wishLabel(w.kind)}</span><strong style="font-size:22px">${esc(w.title)}</strong>
+        <span class="hint">Gespeichert am ${esc(new Date(w.at).toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" }))}</span></div>
+      ${w.url ? `<a class="btn btn-outline btn-block" href="${esc(w.url)}" target="_blank" rel="noopener">${ICON.link} ${esc(domainOf(w.url) || "Link öffnen")} öffnen</a>` : ""}
+      ${w.note ? `<p class="wish-full">${esc(w.note)}</p>` : ""}
+      ${d ? `<button class="menu-row" data-act="detail" data-id="${d.id}"><span>Gericht: ${esc(d.n)}</span></button>` : ""}
+      <div class="row" style="margin-top:14px">
+        <button class="btn btn-outline" data-act="wish-edit" data-id="${w.id}">Bearbeiten</button>
+        <button class="btn ${del ? "btn-primary" : "btn-outline"}" data-act="wish-delete" data-id="${w.id}">${del ? "Wirklich löschen" : "Löschen"}</button>
+      </div>
+    </div>`);
+  }
+
+  // ── Kalorien: Tagesbedarf (Mifflin-St-Jeor) und Tagesbilanz ──
+  const fmtNum = (n) => Math.round(n).toLocaleString("de-DE");
+  const kcalText = (k) => `≈ ${fmtNum(k)} kcal`;
+  const ACTIVITY = [[1.2, "Wenig Bewegung", "Büro, kaum Sport"], [1.375, "Leicht aktiv", "1–3× Sport pro Woche"], [1.55, "Aktiv", "3–5× Sport pro Woche"], [1.725, "Sehr aktiv", "Fast täglich Sport oder körperliche Arbeit"]];
+  const GOALS = [[0, "Gewicht halten"], [-400, "Leicht abnehmen"]];
+  function kcalTarget(b) {
+    const sexAdj = b.sex === "m" ? 5 : b.sex === "w" ? -161 : -78;
+    const bmr = 10 * b.weight + 6.25 * b.height - 5 * b.age + sexAdj;
+    return Math.round((bmr * b.activity + b.goal) / 10) * 10;
+  }
+
+  function renderKcalSetup() {
+    const b = st.profile.body || { sex: "w", age: "", height: "", weight: "", activity: 1.375, goal: 0 };
+    const chip = (name, v, label, cur) => `<button type="button" data-act="kcal-chip" data-k="${name}" data-v="${v}" aria-pressed="${String(cur) === String(v)}">${label}</button>`;
+    return `<section class="screen onb">
+      <header class="onb-head"><button class="icon-btn" data-act="kcal-back" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>
+      <div class="onb-body scroll">
+        <div class="page-head"><h1>Kalorien-Ziel</h1><p>Damit Lunchly deinen Tagesbedarf schätzen kann. Die Angaben bleiben auf deinem Handy.</p></div>
+        <div class="stack"><span class="field-label">Geschlecht</span>
+          <div class="chips" data-group="sex">${chip("sex", "w", "Weiblich", b.sex)}${chip("sex", "m", "Männlich", b.sex)}${chip("sex", "d", "Divers", b.sex)}</div></div>
+        <div class="fieldset grid3">
+          <label><small>Alter</small><input id="k-age" inputmode="numeric" maxlength="3" placeholder="Jahre" value="${esc(b.age)}"></label>
+          <label><small>Größe</small><input id="k-height" inputmode="numeric" maxlength="3" placeholder="cm" value="${esc(b.height)}"></label>
+          <label><small>Gewicht</small><input id="k-weight" inputmode="decimal" maxlength="5" placeholder="kg" value="${esc(b.weight)}"></label>
+        </div>
+        <div class="stack"><span class="field-label">Wie aktiv bist du?</span>
+          <div class="options" data-group="activity">${ACTIVITY.map(([v, t, d]) => `<button type="button" class="option" data-act="kcal-chip" data-k="activity" data-v="${v}" aria-pressed="${b.activity === v}"><strong>${t}</strong><span class="radio" aria-hidden="true"></span><span>${d}</span></button>`).join("")}</div></div>
+        <div class="stack"><span class="field-label">Ziel</span>
+          <div class="chips" data-group="goal">${GOALS.map(([v, l]) => chip("goal", v, l, b.goal)).join("")}</div></div>
+      </div>
+      <div class="onb-foot"><button class="btn btn-primary btn-block" data-act="kcal-save">Speichern</button></div>
+    </section>`;
+  }
+
+  function renderKcal() {
+    const day = today();
+    const ds = dayState(day);
+    const pickD = ds.pick && BY_ID.get(ds.pick);
+    const body = st.profile.body;
+    const head = `<header class="onb-head"><button class="icon-btn" data-act="tab" data-v="results" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>`;
+    if (!pickD) {
+      return `<section class="screen scroll">${head}<div class="page-head"><h1>Tagesbilanz</h1><p>Sobald ihr euch für das Mittagessen von morgen entschieden habt, siehst du hier die Kalorien.</p></div>
+        <button class="btn btn-primary btn-block" data-act="tab" data-v="results">Zu den Matches</button></section>`;
+    }
+    if (!body) {
+      return `<section class="screen scroll">${head}
+        <div class="page-head"><span class="eyebrow">Morgen gibt's ${esc(pickD.n)}</span><h1>Tagesbilanz</h1><p>Das Gericht hat ${kcalText(pickD.k)}. Mit ein paar Angaben zu dir rechnet Lunchly aus, wie viel du am Rest des Tages noch essen kannst, ohne zuzunehmen.</p></div>
+        <button class="btn btn-primary btn-block" data-act="kcal-setup">Kalorien-Ziel einrichten</button></section>`;
+    }
+    const m = computeMatches(day);
+    const dessert = m.desserts[0] && m.desserts[0].d;
+    const target = kcalTarget(body);
+    const lunch = pickD.k;
+    const sweet = dessert && ui.withDessert ? dessert.k : 0;
+    const rest = target - lunch - sweet;
+    const pct = (v) => Math.max(0, Math.min(100, (v / target) * 100));
+    const seg = (cls, v, label) => v > 0 ? `<i class="seg ${cls}" style="flex-basis:${pct(v)}%" title="${label}: ${fmtNum(v)} kcal"></i>` : "";
+    const split = [["Frühstück", 0.3], ["Abendessen", 0.5], ["Snacks", 0.2]];
+    return `<section class="screen scroll">
+      ${head}
+      <div class="page-head"><span class="eyebrow">Tagesbilanz für ${esc(fmtDay(addDays(day, 1)))}</span><h1>Dein Tag mit ${esc(pickD.n)}</h1></div>
+      <div class="kcal-hero">
+        <span class="kcal-big">${rest >= 0 ? fmtNum(rest) : 0} kcal</span>
+        <span class="hint">${rest >= 0 ? "kannst du am Rest des Tages noch essen" : "Das Mittagessen deckt deinen Tagesbedarf schon"}</span>
+      </div>
+      <div class="kcal-bar" role="img" aria-label="Tagesbedarf ${fmtNum(target)} kcal: Mittagessen ${fmtNum(lunch)}, ${sweet ? `Dessert ${fmtNum(sweet)}, ` : ""}übrig ${fmtNum(Math.max(rest, 0))} kcal">
+        ${seg("lunch", lunch, "Mittagessen")}${seg("sweet", sweet, "Dessert")}${seg("rest", Math.max(rest, 0), "Übrig")}
+      </div>
+      <div class="legend">
+        <span><i class="sw lunch"></i>Mittagessen <b>${fmtNum(lunch)}</b></span>
+        ${sweet ? `<span><i class="sw sweet"></i>Dessert <b>${fmtNum(sweet)}</b></span>` : ""}
+        <span><i class="sw rest"></i>Übrig <b>${fmtNum(Math.max(rest, 0))}</b></span>
+        <span class="legend-total">Tagesbedarf <b>${fmtNum(target)} kcal</b></span>
+      </div>
+      ${dessert ? `<button class="menu-row switch-row" data-act="kcal-dessert" aria-pressed="${ui.withDessert}"><span>Mit Dessert: ${esc(dessert.n)} (${kcalText(dessert.k)})</span><span class="switch" aria-hidden="true"></span></button>` : ""}
+      ${rest > 0 ? `<div class="stack"><div class="sec-title"><h2>So könntest du den Rest verteilen</h2></div>
+        <div class="split">${split.map(([l, f]) => `<div class="split-row"><span>${l}</span><b>${kcalText(rest * f)}</b></div>`).join("")}</div></div>`
+        : `<div class="empty"><strong>Halte den Rest des Tages leicht</strong><p class="hint">Gemüse, Salat oder eine klare Suppe passen gut zum Abend.</p></div>`}
+      <button class="btn btn-outline btn-block" data-act="kcal-setup">Angaben ändern</button>
+      <p class="disclaimer">Schätzwerte. Kalorien pro Portion schwanken je nach Rezept und Größe. Der Tagesbedarf ist mit der Mifflin-St-Jeor-Formel und deinem Aktivitätslevel geschätzt. Das ist keine Ernährungsberatung.</p>
     </section>`;
   }
 
@@ -865,7 +1051,7 @@
         <div class="stack" style="gap:4px">
           <div class="title-row"><h2>${rankHTML(d.id)}${esc(d.n)}</h2>${hscore(d.h)}</div>
           ${starsHTML(d.id)}
-          <p class="meta">${d.f} ${esc(d.o)}${d.kind === "dessert" ? " · Dessert-Bonus" : ""}</p>
+          <p class="meta">${d.f} ${esc(d.o)} · ${kcalText(d.k)} pro Portion${d.kind === "dessert" ? " · Dessert-Bonus" : ""}</p>
         </div>
         <div class="divider"></div>
         <div class="fact">${ICON.pin}<strong>Herkunft und Geschichte</strong><p>${esc(d.x)}</p></div>
@@ -879,30 +1065,9 @@
         </div>
         ${tagsHTML(d)}
         ${fromDeck ? `<div class="row"><button class="btn btn-outline" data-act="nope">Nö</button><button class="btn btn-primary" data-act="like" data-autofocus>Lecker</button></div>` : ""}
+        <button class="btn btn-outline btn-block" data-act="wish-from-dish" data-id="${d.id}">${ICON.bookmark} Ins Wunschbuch</button>
         <p class="disclaimer">Histamin-Werte sind Richtwerte anhand typischer Zutaten. Keine medizinische Beratung.</p>
       </div>
-    </div>`);
-  }
-
-  function showMenu() {
-    const view = ui.view || autoView();
-    const rows = [];
-    if (st.pair && !st.pair.pending) {
-      if (view !== "results") rows.push(`<button class="menu-row" data-act="results">Matches für morgen</button>`);
-      if (view !== "swipe" && view !== "share") rows.push(`<button class="menu-row" data-act="home">Zurück zu heute</button>`);
-      rows.push(`<button class="menu-row" data-act="profile">Profil bearbeiten</button>`);
-      if (pickStats().ranking.length) rows.push(`<button class="menu-row" data-act="favorites">Lieblingsgerichte</button>`);
-      rows.push(`<button class="menu-row" data-act="invite">Einladungs-Link teilen</button>`);
-      rows.push(`<button class="menu-row" data-act="paste-link">Link einfügen</button>`);
-      rows.push(`<button class="menu-row danger" data-act="reset">${ui.confirmReset ? "Wirklich entkoppeln? Zum Bestätigen tippen" : "Kopplung aufheben"}</button>`);
-    }
-    openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="Menü">
-      <div class="menu-head">
-        <strong>${st.pair && !st.pair.pending ? `Gekoppelt mit ${esc(pname(other(me())))}` : "Lunchly"}</strong>
-        <span class="hint">${DAILY_DISHES} Gerichte pro Tag · Pause nach dem Swipen: ${BLACKLIST_DAYS} Tage</span>
-      </div>
-      ${rows.join("")}
-      <button class="btn btn-outline btn-block" data-act="close" data-autofocus>Schließen</button>
     </div>`);
   }
 
@@ -1126,13 +1291,7 @@
       await navigator.clipboard.writeText(text);
       toast("Link kopiert");
     } catch {
-      const box = $("#code-box");
-      if (box) {
-        const range = document.createRange();
-        range.selectNodeContents(box);
-        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
-      }
-      toast("Link markiert. Jetzt kopieren und einfügen.");
+      toast("Kopieren ist hier nicht möglich. Nutze den WhatsApp-Button.");
     }
   }
 
@@ -1155,7 +1314,7 @@
         st.pair.players[me()].name = name === pname(other(me())) ? name + " 2" : name;
         if (st.pair.pending) { st.pair.pending = false; toast(`Mit ${pname(other(me()))} gekoppelt`); }
       }
-      go(null);
+      go(ui.view === "profile-edit" ? "me" : null);
     },
     "pair-mode": (el) => { ui.pairMode = el.dataset.v; render(); },
     "pair-go": () => {
@@ -1182,6 +1341,62 @@
       go("results");
       toast(`Morgen gibt's ${BY_ID.get(el.dataset.id).n}`);
     },
+    tab: (el) => {
+      ui.confirmReset = false;
+      const v = el.dataset.v;
+      if (v === "today") { const ds = dayState(today()); go(ds.pos[me()] < deckFor(today()).length ? "swipe" : "share"); return; }
+      go(v);
+    },
+    "wish-new": () => wishForm(),
+    "wish-from-dish": (el) => { const d = BY_ID.get(el.dataset.id); closeSheet(); wishForm({ title: d.n, dishId: d.id, kind: "rezept" }); },
+    "wish-filter": (el) => { ui.wishFilter = el.dataset.v; render(); },
+    "wish-kind": (el) => {
+      ui.wishKind = el.dataset.v;
+      el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+    },
+    "wish-save": (el) => {
+      const title = $("#w-title", sheetRoot).value.trim();
+      if (!title) { toast("Bitte gib einen Titel ein."); $("#w-title", sheetRoot).focus(); return; }
+      let url = $("#w-url", sheetRoot).value.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+      const note = $("#w-note", sheetRoot).value.trim();
+      const id = el.dataset.id;
+      if (id) Object.assign(st.wish.find((w) => w.id === id), { title, url, note, kind: ui.wishKind });
+      else st.wish.unshift({ id: newSeed(), title, url, note, kind: ui.wishKind, dishId: el.dataset.dish || null, at: Date.now() });
+      ui.wishFilter = "alle";
+      toast(id ? "Eintrag gespeichert" : "Im Wunschbuch gespeichert");
+      go("wishbook");
+    },
+    "wish-open": (el) => { ui.confirmDelete = null; wishDetail(el.dataset.id); },
+    "wish-edit": (el) => wishForm(st.wish.find((w) => w.id === el.dataset.id)),
+    "wish-delete": (el) => {
+      const id = el.dataset.id;
+      if (ui.confirmDelete !== id) { ui.confirmDelete = id; wishDetail(id); return; }
+      st.wish = st.wish.filter((w) => w.id !== id);
+      ui.confirmDelete = null;
+      toast("Eintrag gelöscht");
+      go("wishbook");
+    },
+    kcal: () => go("kcal"),
+    "kcal-setup": () => { ui.backTo = ui.view || autoView(); go("kcal-setup"); },
+    "kcal-back": () => go(ui.backTo === "kcal" ? "kcal" : "me"),
+    "kcal-chip": (el) => {
+      el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+    },
+    "kcal-save": () => {
+      const pick = (k) => { const b = $(`[data-k="${k}"][aria-pressed="true"]`, app); return b ? b.dataset.v : null; };
+      const num = (id) => parseFloat(String($(id, app).value).replace(",", "."));
+      const body = { sex: pick("sex") || "d", age: num("#k-age"), height: num("#k-height"), weight: num("#k-weight"),
+        activity: parseFloat(pick("activity") || "1.375"), goal: parseFloat(pick("goal") || "0") };
+      if (!(body.age >= 14 && body.age <= 100) || !(body.height >= 120 && body.height <= 230) || !(body.weight >= 35 && body.weight <= 250)) {
+        toast("Bitte Alter, Größe (cm) und Gewicht (kg) prüfen.");
+        return;
+      }
+      st.profile.body = body;
+      toast(`Dein Tagesbedarf: ${fmtNum(kcalTarget(body))} kcal`);
+      go(ui.backTo === "kcal" ? "kcal" : "me");
+    },
+    "kcal-dessert": () => { ui.withDessert = !ui.withDessert; render(); },
     results: () => go("results"),
     favorites: () => openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="Lieblingsgerichte">
       <div class="menu-head"><strong>Lieblingsgerichte</strong><span class="hint">Je öfter ihr ein Gericht wählt, desto mehr Sterne bekommt es: ab 1, 2, 3, 5 und 8 Mal.</span></div>
@@ -1190,7 +1405,6 @@
     </div>`),
     home: () => go(null),
     invite: () => go("invite"),
-    menu: showMenu,
     join: () => {
       const v = st.profile.name;
       st.pair.players[me()].name = v === pname(other(me())) ? v + " 2" : v;
@@ -1198,7 +1412,7 @@
       go(null);
     },
     reset: () => {
-      if (!ui.confirmReset) { ui.confirmReset = true; showMenu(); return; }
+      if (!ui.confirmReset) { ui.confirmReset = true; render(); return; }
       st.pair = null; st.days = {};
       go(null);
     },

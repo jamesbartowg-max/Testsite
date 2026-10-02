@@ -8,6 +8,9 @@
   --float: rgba(255, 255, 255, .92);
   --field: #b0b0b0;
   --star: #f5a623;
+  --switch-on: #222222;
+  --kcal-lunch: #c8093a;   /* geprüft: Helligkeit, CVD-Abstand, Kontrast */
+  --kcal-sweet: #ef5f80;
   --av0: #222222;
   --bg-soft: #f7f7f7;
   --ink: #222222;
@@ -46,6 +49,9 @@
   --ink-2: #a1a1a6;
   --line: #3a3a3c;
   --line-soft: #2c2c2e;
+  --kcal-lunch: #e25a76;
+  --kcal-sweet: #a32a47;
+  --switch-on: #ff4d6d;
   --rausch: #ff4d6d;
   --rausch-dark: #ff6b85;
   --rausch-soft: #3a1820;
@@ -454,6 +460,83 @@ label.link-btn { cursor: pointer; }
 .me-row { display: flex; align-items: center; gap: 12px; }
 .me-row div { display: grid; }
 .me-row strong { font-weight: 600; }
+
+/* ── Untere Navigation ───────────────────────── */
+.tabbar {
+  display: grid; grid-template-columns: repeat(4, 1fr); flex: none;
+  border-top: 1px solid var(--line-soft); background: var(--bg);
+  margin-inline: -16px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+}
+.tab { border: 0; background: none; display: grid; justify-items: center; gap: 2px; padding: 4px 0; color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.tab-ico { position: relative; display: grid; }
+.tab.on { color: var(--rausch); }
+.tab .dot {
+  position: absolute; top: -4px; right: -10px; min-width: 18px; height: 18px; border-radius: 9px; padding: 0 5px;
+  background: var(--rausch); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg);
+}
+.tab.bump .tab-ico svg { animation: bump .55s cubic-bezier(.2, 1.4, .4, 1); }
+
+/* ── Profil-Tab ──────────────────────────────── */
+.av.xl { width: 72px; height: 72px; font-size: 28px; }
+.me-head { display: flex; align-items: center; gap: 16px; padding-top: 8px; }
+.me-head h1 { font-size: 26px; }
+.me-head div { display: grid; gap: 2px; }
+.rows { display: grid; }
+.rows .menu-row:last-child { border-bottom: 1px solid var(--line-soft); }
+.menu-row { gap: 12px; }
+.menu-row > span:first-child { flex: 1; min-width: 0; }
+.row-val { color: var(--ink-2); font-size: 14px; }
+.switch-row::after { display: none; }
+.switch { flex: none; width: 46px; height: 28px; border-radius: 14px; background: var(--line); position: relative; transition: background .2s; }
+.switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .2s; }
+[aria-pressed="true"] > .switch { background: var(--switch-on); }
+[aria-pressed="true"] > .switch::after { transform: translateX(18px); }
+
+/* ── Wunschbuch ──────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips.slide { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+.chips.slide::-webkit-scrollbar { display: none; }
+.chips.slide button { flex: none; }
+.chips button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 16px; font-weight: 600; font-size: 14px; }
+.chips button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.wish-list { display: grid; gap: 12px; }
+.wish {
+  display: grid; gap: 4px; text-align: left; width: 100%;
+  border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 14px 16px;
+}
+.wish strong { font-size: 16px; font-weight: 600; }
+.wish-kind { font-size: 12px; font-weight: 700; color: var(--rausch); text-transform: uppercase; letter-spacing: .06em; }
+.wish-note { font-size: 14px; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wish-meta { font-size: 13px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+.wish-full { white-space: pre-wrap; font-size: 15px; line-height: 1.55; margin-top: 12px; }
+.field-label { display: block; font-size: 14px; font-weight: 600; margin-top: 14px; margin-bottom: 6px; }
+textarea.input.tall { min-height: 140px; font-family: var(--font); font-size: 15px; }
+.send { display: grid; gap: 6px; }
+.send-more { display: flex; justify-content: center; gap: 18px; }
+.btn svg { flex: none; }
+
+/* ── Kalorien ────────────────────────────────── */
+.fieldset.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fieldset.grid3 label + label { border-top: 0; border-left: 1px solid var(--field); }
+.kcal-hero { display: grid; gap: 2px; }
+.kcal-big { font-size: 44px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kcal-bar { display: flex; gap: 2px; height: 18px; }
+.kcal-bar .seg { display: block; min-width: 4px; border-radius: 2px; }
+.kcal-bar .seg:first-child { border-radius: 9px 2px 2px 9px; }
+.kcal-bar .seg:last-child { border-radius: 2px 9px 9px 2px; }
+.kcal-bar .seg:only-child { border-radius: 9px; }
+.seg.lunch, .sw.lunch { background: var(--kcal-lunch); }
+.seg.sweet, .sw.sweet { background: var(--kcal-sweet); }
+.seg.rest, .sw.rest { background: var(--line-soft); box-shadow: inset 0 0 0 1px var(--line); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.legend .legend-total { margin-left: auto; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.split { display: grid; border: 1px solid var(--line); border-radius: 12px; }
+.split-row { display: flex; justify-content: space-between; padding: 14px 16px; font-size: 15px; }
+.split-row + .split-row { border-top: 1px solid var(--line-soft); }
+.split-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ── Sterne & Platzierung ────────────────────── */
 .stars { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
