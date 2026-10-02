@@ -13,7 +13,7 @@
 - **Dessert-Bonus-Swipes:** An manchen Tagen werden 1–2 von 25 Desserts zufällig eingemischt
 - **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 1 pro Tag), Rückgängig, Match-Popup
 - **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Kompromiss-Ideen
-- Design im Airbnb/Tinder-Stil, Light- und Dark-Mode, PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
+- Helles Design im Airbnb/Tinder-Stil (bewusst nur ein helles Theme), PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
 
 ## Einstellungen
 
@@ -58,6 +58,19 @@ tools/build-standalone.mjs        Build-Skript für die Single-File-Version
 ```
 
 Ein Gericht hinzufügen oder ändern: einfach das Objekt in der passenden `js/data/dishes-*.js` bearbeiten (die Schlüssel stehen oben in `dishes-deutschland.js`).
+
+## Fotos der Gerichte einfügen
+
+Solange ein Gericht kein Foto hat, zeigt die App eine weiße Bildfläche. So kommt ein Foto dazu:
+
+1. Bild in den Ordner `images/gerichte/` legen, z. B. `images/gerichte/rinderrouladen.jpg` (Querformat oder quadratisch, ca. 1200 px breit, JPG oder WebP).
+2. Beim Gericht in `js/data/dishes-*.js` das Feld `img` ergänzen:
+
+```js
+{ n: "Rinderrouladen mit Blaukraut und Klößen", img: "images/gerichte/rinderrouladen.jpg", … }
+```
+
+Das Foto erscheint dann automatisch auf der Swipe-Karte, in der Detailansicht, beim Match und in der Ergebnisliste. Es wird immer formatfüllend zugeschnitten (`object-fit: cover`).
 
 ## Hinweis zum Histamin-Barometer
 

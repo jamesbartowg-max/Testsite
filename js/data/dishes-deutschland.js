@@ -3,7 +3,8 @@
  *
  * Schlüssel pro Gericht:
  *   n   Name
- *   e   Emoji (Kartenbild)
+ *   e   Emoji (Platzhalter, wird in der App nicht angezeigt)
+ *   img Foto (optional), z. B. "images/gerichte/rinderrouladen.jpg". Ohne Foto bleibt die Bildfläche weiß.
  *   o   Herkunft (Ort, Land)
  *   f   Flagge
  *   r   Region (steuert die Kartenfarbe): de | it | eu | orient | afrika | asien | amerika

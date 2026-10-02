@@ -30,6 +30,7 @@
   L.dishes.forEach((d) => { d.id = "d-" + slug(d.n); d.kind = "dish"; });
   L.desserts.forEach((d) => { d.id = "s-" + slug(d.n); d.kind = "dessert"; d.r = "dessert"; d.g = d.g || []; });
   const BY_ID = new Map([...L.dishes, ...L.desserts].map((d) => [d.id, d]));
+  const byName = (n) => L.dishes.find((d) => d.n === n) || L.dishes[0];
 
   // ── Helpers ───────────────────────────────────────────────
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -49,19 +50,21 @@
   const fmtDay = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const fmtShort = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
 
+  const svg = (w, body) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
   const ICON = {
-    nope: `<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>`,
-    like: `<svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/></svg>`,
-    super: `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>`,
-    undo: `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h11a5 5 0 010 10H9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M8 5L4 9l4 4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-    info: `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M12 11v6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor"/></svg>`,
-    up: `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-    close: `<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>`,
-    matches: `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`,
-    menu: `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+    nope: svg(26, `<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>`),
+    like: svg(28, `<path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 3 4.5 6.8 4.5c2.1 0 3.6 1.1 5.2 3 1.6-1.9 3.1-3 5.2-3 3.8 0 5.9 3.9 4.4 7.3C19.5 16.4 12 21 12 21z"/>`),
+    super: svg(22, `<path fill="currentColor" d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/>`),
+    undo: svg(20, `<path d="M4 9h11a5 5 0 010 10H9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 5L4 9l4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`),
+    info: svg(20, `<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.3" fill="currentColor"/>`),
+    close: svg(16, `<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>`),
+    matches: svg(24, `<path d="M12 20s-7-4.3-8.9-8.6C1.7 8.2 3.6 5 7 5c1.9 0 3.3 1 5 2.8C13.7 6 15.1 5 17 5c3.4 0 5.3 3.2 3.9 6.4C19 15.7 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>`),
+    menu: svg(22, `<path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`),
+    pin: svg(22, `<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0113 0c0 4.8-6.5 11-6.5 11z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/>`),
+    spark: svg(22, `<path d="M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
+    quote: svg(22, `<path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`),
   };
-  const LOGO_MARK = `<svg width="1.1em" height="1.1em" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fd267a"/><stop offset="1" stop-color="#ff6036"/></linearGradient></defs><path d="M4 15h24a12 12 0 01-24 0z" fill="url(#lg-mark)"/><path d="M11 3.5c-2 2.5 2 4 0 7M16 2.5c-2 2.5 2 4 0 7M21 3.5c-2 2.5 2 4 0 7" stroke="url(#lg-mark)" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>`;
-  const logo = () => `<span class="logo">${LOGO_MARK}<span>lunchly</span></span>`;
+  const logo = () => `<span class="logo"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 15h24a12 12 0 01-24 0z" fill="currentColor"/><path d="M11 3.5c-2 2.5 2 4 0 7M16 2.5c-2 2.5 2 4 0 7M21 3.5c-2 2.5 2 4 0 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg><span>lunchly</span></span>`;
 
   const store = {
     load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } },
@@ -168,22 +171,26 @@
   const HIST_LEVELS = [[2, "sehr niedrig"], [4, "niedrig"], [6, "mittel"], [8, "hoch"], [10, "sehr hoch"]];
   const histLabel = (h) => HIST_LEVELS.find(([max]) => h <= max)[1];
   const histHue = (h) => Math.round(135 - (h - 1) * 15); // 1 = grün … 10 = rot
+  const histColor = (h) => `hsl(${histHue(h)} 68% 46%)`;
   function fitText(h) {
-    if (h <= 3) return { t: "✓ Bei Histaminintoleranz gut geeignet", hue: histHue(1) };
-    if (h <= 6) return { t: "≈ Bei Histaminintoleranz mit Anpassung", hue: histHue(5) };
-    return { t: "✗ Bei Histaminintoleranz eher meiden", hue: histHue(10) };
+    if (h <= 3) return { t: "Bei Histaminintoleranz gut geeignet", hue: histHue(1) };
+    if (h <= 6) return { t: "Bei Histaminintoleranz mit Anpassung", hue: histHue(5) };
+    return { t: "Bei Histaminintoleranz eher meiden", hue: histHue(10) };
   }
+  const fitHTML = (h) => { const f = fitText(h); return `<span class="fit" style="color:hsl(${f.hue} 62% var(--hl))">${f.t}</span>`; };
 
-  function baroHTML(h) {
+  function barHTML(h) {
     let bars = "";
-    for (let i = 1; i <= 10; i++) {
-      bars += `<i${i <= h ? ` style="background:hsl(${histHue(i)} 70% 50%)"` : ""}></i>`;
-    }
-    return `<div class="baro" role="img" aria-label="Histamin ${h} von 10, ${histLabel(h)}">
-      <div class="baro-head"><span class="lbl">Histamin-Barometer</span>
-        <span class="val"><span class="lvl" style="--hue:${histHue(h)}">${histLabel(h)}</span> · ${h}/10</span></div>
-      <div class="baro-bar" aria-hidden="true">${bars}</div></div>`;
+    for (let i = 1; i <= 10; i++) bars += `<i${i <= h ? ` style="background:${histColor(i)}"` : ""}></i>`;
+    return `<div class="baro-bar" aria-hidden="true">${bars}</div>`;
   }
+  function baroHTML(h) {
+    return `<div class="baro" role="img" aria-label="Histamin ${h} von 10, ${histLabel(h)}">
+      <div class="baro-head"><span>Histamin-Barometer</span>
+        <span class="val"><span class="lvl" style="--hue:${histHue(h)}">${histLabel(h)}</span> · ${h}/10</span></div>
+      ${barHTML(h)}</div>`;
+  }
+  const hscore = (h) => `<span class="hscore" aria-label="Histamin ${h} von 10"><i style="background:${histColor(h)}"></i>${h}/10</span>`;
 
   function gaugeSVG(h) {
     const cx = 130, cy = 132, r = 100;
@@ -195,44 +202,48 @@
     for (let i = 0; i < 10; i++) {
       const [x0, y0] = pt(180 + i * 18 + 1.5, r);
       const [x1, y1] = pt(180 + (i + 1) * 18 - 1.5, r);
-      segs += `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" stroke="hsl(${histHue(i + 1)} 70% 50%)"
-        stroke-width="24" fill="none" opacity="${i < h ? 1 : 0.18}"/>`;
+      segs += `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" stroke="${histColor(i + 1)}"
+        stroke-width="22" fill="none" opacity="${i < h ? 1 : 0.16}"/>`;
     }
     const [nx, ny] = pt(180 + (h - 0.5) * 18, r - 34);
     const [l1x, l1y] = pt(180, r + 22), [l2x, l2y] = pt(360, r + 22);
     return `<svg class="gauge" viewBox="0 0 260 168" role="img" aria-label="Histamin-Barometer: ${h} von 10">
       ${segs}
-      <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="${cx}" cy="${cy}" r="9" fill="currentColor"/>
-      <text x="${l1x}" y="${+l1y + 4}" font-size="11" text-anchor="middle" fill="currentColor" opacity=".6">1</text>
-      <text x="${l2x}" y="${+l2y + 4}" font-size="11" text-anchor="middle" fill="currentColor" opacity=".6">10</text>
-      <text x="${cx}" y="${cy + 30}" text-anchor="middle" font-weight="800" font-size="20" fill="currentColor">${h}/10 · ${histLabel(h)}</text>
+      <line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="8" fill="currentColor"/>
+      <text x="${l1x}" y="${+l1y + 4}" font-size="11" text-anchor="middle" fill="currentColor" opacity=".55">1</text>
+      <text x="${l2x}" y="${+l2y + 4}" font-size="11" text-anchor="middle" fill="currentColor" opacity=".55">10</text>
+      <text x="${cx}" y="${cy + 30}" text-anchor="middle" font-weight="600" font-size="18" fill="currentColor">${h}/10 · ${histLabel(h)}</text>
     </svg>`;
   }
 
   // ── Karten ────────────────────────────────────────────────
-  const TAGS = {
-    veggie: "🌱 Veggie", vegan: "🌿 Vegan", scharf: "🌶️ Scharf", fisch: "🐟 Fisch & Meer",
-    deftig: "💪 Deftig", leicht: "🪶 Leicht",
-  };
-  const tagList = (d) => d.g.map((g) => TAGS[g] || g);
+  const TAGS = { veggie: "Vegetarisch", vegan: "Vegan", scharf: "Scharf", fisch: "Fisch & Meer", deftig: "Deftig", leicht: "Leicht" };
+  const tagsHTML = (d) => d.g.length ? `<div class="tags">${d.g.map((g) => `<span class="tag">${esc(TAGS[g] || g)}</span>`).join("")}</div>` : "";
+  const badgeFor = (d) => d.kind === "dessert" ? "Dessert-Bonus" : d.h <= 3 ? "Histaminarm" : "";
+
+  // Foto des Gerichts (Feld „img“ in den Daten). Ohne Foto bleibt die Fläche weiß.
+  const photo = (d) => d.img ? `<img src="${esc(d.img)}" alt="" loading="lazy" draggable="false">` : "";
+
+  function mediaHTML(d, { badge = badgeFor(d), info = false, extra = "" } = {}) {
+    return `<div class="media">
+      ${photo(d)}
+      ${badge ? `<span class="badge">${esc(badge)}</span>` : ""}
+      ${info ? `<button class="media-btn" data-act="info" aria-label="Infos zu ${esc(d.n)}">${ICON.info}</button>` : ""}
+      ${extra}
+    </div>`;
+  }
 
   function cardHTML(d, cls) {
-    const dessert = d.kind === "dessert";
-    return `<article class="card ${cls}${dessert ? " dessert" : ""}" data-id="${d.id}" aria-label="${esc(d.n)}">
-      <div class="card-art reg-${d.r}"><span class="emoji" aria-hidden="true">${d.e}</span></div>
-      ${dessert ? `<span class="bonus-badge">🍰 Dessert-Bonus</span>` : ""}
-      <div class="card-shade"></div>
-      <span class="stamp like">Lecker</span><span class="stamp nope">Nö</span><span class="stamp super">Heißhunger</span>
+    const stamps = `<span class="stamp like">Lecker</span><span class="stamp nope">Nö</span><span class="stamp super">Heißhunger</span>`;
+    return `<article class="card ${cls}${d.kind === "dessert" ? " dessert" : ""}" data-id="${d.id}" aria-label="${esc(d.n)}">
+      ${mediaHTML(d, { info: true, extra: stamps })}
       <div class="card-body">
-        <div class="card-title-row">
-          <h2 class="card-title">${esc(d.n)}</h2>
-          <button class="card-info" data-act="info" aria-label="Infos zu ${esc(d.n)}">${ICON.up}</button>
-        </div>
-        <span class="card-origin">${d.f} ${esc(d.o)}</span>
-        <p class="card-tag">${esc(d.t)}</p>
+        <div class="title-row"><h2>${esc(d.n)}</h2></div>
+        <p class="meta">${d.f} ${esc(d.o)}</p>
+        <p class="tagline">${esc(d.t)}</p>
         ${baroHTML(d.h)}
-        ${d.g.length ? `<div class="card-tags">${tagList(d).map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+        ${tagsHTML(d)}
       </div>
     </article>`;
   }
@@ -295,7 +306,7 @@
       st.pair = { seed: o.s, start: o.a, players: names.map((name) => ({ name })), me: other(o.w), pending: true };
       st.days = {};
     } else if (o.w === me()) {
-      toast("Das ist dein eigener Code 😉");
+      toast("Das ist dein eigener Code.");
       return false;
     } else {
       st.pair.players[o.w].name = names[o.w]; // Namensänderung der anderen Person übernehmen
@@ -306,9 +317,9 @@
       ds.sw[o.w] = unpack(o.k, len);
       ds.pos[o.w] = Math.min(o.c, len);
       ds.known[o.w] = true;
-      if (!st.pair.pending) toast(o.d === today() ? `Swipes von ${pname(o.w)} geladen ✓` : `Swipes vom ${fmtShort(o.d)} geladen`);
+      if (!st.pair.pending) toast(o.d === today() ? `Swipes von ${pname(o.w)} geladen` : `Swipes vom ${fmtShort(o.d)} geladen`);
     } else if (!st.pair.pending) {
-      toast(`Mit ${pname(o.w)} gekoppelt ✓`);
+      toast(`Mit ${pname(o.w)} gekoppelt`);
     }
     go(null);
     return true;
@@ -371,24 +382,45 @@
     if (focusEl) focusEl.focus({ preventScroll: true });
   }
 
+  const topbar = (extra = "") => `<header class="topbar">${logo()}${extra}</header>`;
+  const menuBtn = () => `<button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button>`;
+
+  function previewCard(d, cls) {
+    return `<article class="card ${cls}" aria-hidden="true">
+      ${mediaHTML(d)}
+      <div class="card-body"><div class="title-row"><h2>${esc(d.n)}</h2></div><p class="meta">${d.f} ${esc(d.o)}</p>${barHTML(d.h)}</div>
+    </article>`;
+  }
+
   function renderSetup() {
-    const strip = ["it", "de", "asien", "amerika", "eu"].map((r, i) =>
-      `<span class="reg-${r}">${["🍝", "🥨", "🍜", "🌮", "🥘"][i]}</span>`).join("");
+    const samples = ["Stuffed Baked Potatoes mit Quark und Schnittlauch", "Spaghetti Bolognese", "Pizza Salami"].map(byName);
     return `<section class="screen scroll">
-      <div class="start-head">${logo()}</div>
-      <div class="hero">
-        <div class="hero-strip" aria-hidden="true">${strip}</div>
+      ${topbar()}
+      <div class="preview">
+        ${previewCard(byName("Pizza Margherita"), "p-left")}
+        ${previewCard(byName("Pho Bo (Vietnamesische Rindersuppe)"), "p-right")}
+        ${previewCard(byName("Brathähnchen mit Rosmarinkartoffeln"), "")}
+      </div>
+      <div class="page-head">
         <h1>Was essen wir morgen Mittag?</h1>
-        <p>Jeden Tag 15 Gerichte zum Swipen. Was euch beiden schmeckt, wird ein Match und steht für morgen fest.</p>
+        <p>Jeden Tag ${DAILY_DISHES} Gerichte zum Swipen. Was euch beiden schmeckt, steht für morgen fest.</p>
       </div>
 
       <div class="section">
         <h2>So funktioniert's</h2>
         <ol class="steps">
-          <li><span><b>Koppeln.</b> Du schickst deiner Lunch-Begleitung einmalig einen Link. Jede:r nutzt das eigene Handy.</span></li>
-          <li><span><b>Swipen.</b> Jeden Tag gibt es ${DAILY_DISHES} Gerichte aus ${L.dishes.length}. Was schon dran war, pausiert ${BLACKLIST_DAYS} Tage.</span></li>
-          <li><span><b>Matchen.</b> Schickt euch eure Swipes. Was ihr beide wollt, gibt's morgen.</span></li>
+          <li><div><strong>Koppeln</strong><span>Du schickst deiner Lunch-Begleitung einmal einen Link. Jede Person nutzt das eigene Handy.</span></div></li>
+          <li><div><strong>Swipen</strong><span>Jeden Tag gibt es ${DAILY_DISHES} Gerichte aus ${L.dishes.length}. Was schon dran war, pausiert ${BLACKLIST_DAYS} Tage.</span></div></li>
+          <li><div><strong>Matchen</strong><span>Ihr schickt euch eure Swipes. Was ihr beide wollt, gibt es am nächsten Tag.</span></div></li>
         </ol>
+      </div>
+
+      <div class="section">
+        <h2>Histamin-Barometer</h2>
+        <p class="hint">Jedes Gericht hat einen Wert von 1 bis 10, mit Erklärung und Bestell-Tipp.</p>
+        <div class="sample-baro">
+          ${samples.map((d) => `<div class="row-item"><span>${esc(d.n)}</span>${barHTML(d.h)}</div>`).join("")}
+        </div>
       </div>
 
       <div class="section">
@@ -397,20 +429,13 @@
           <label><small>Dein Name</small><input id="n0" maxlength="20" placeholder="Name" value="${esc(st.draft[0])}" autocomplete="given-name"></label>
           <label><small>Name deiner Lunch-Begleitung</small><input id="n1" maxlength="20" placeholder="Name" value="${esc(st.draft[1])}"></label>
         </div>
+        <button class="btn btn-primary btn-block" data-act="setup">Koppeln und loslegen</button>
       </div>
-
-      <div class="baro-promo">
-        <span class="ico" aria-hidden="true">🌡️</span>
-        <div><strong>Histamin-Barometer bei jedem Gericht</strong>
-        <p>Von 1 (sehr niedrig) bis 10 (sehr hoch), mit Erklärung und Bestell-Tipp.</p></div>
-      </div>
-
-      <button class="btn btn-primary btn-block" data-act="setup">Koppeln & loslegen</button>
 
       <details class="panel">
         <summary>Ich habe eine Einladung bekommen</summary>
-        <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY3.)"></textarea>
-        <button class="btn btn-dark btn-block" data-act="paste">Code laden</button>
+        <textarea class="input" id="paste" placeholder="Link oder Code hier einfügen"></textarea>
+        <button class="btn btn-dark btn-block" data-act="paste">Einladung annehmen</button>
       </details>
     </section>`;
   }
@@ -419,51 +444,55 @@
     const code = myCode();
     const url = shareURL(code);
     const intro = invite
-      ? `${pname(me())} will mit dir jeden Tag das Mittagessen aussuchen 🍽️ Hier koppeln:`
-      : `Meine Lunchly-Swipes fürs Mittagessen morgen sind fertig 🍽️`;
+      ? `${pname(me())} will mit dir jeden Tag das Mittagessen aussuchen. Hier koppeln:`
+      : `Meine Lunchly-Swipes fürs Mittagessen morgen sind fertig:`;
     const msg = `${intro}\n${url || code}`;
     return `<div class="panel">
       <strong>${title}</strong>
       <p class="hint">${text}</p>
       <div class="code-box" id="code-box">${esc(url || code)}</div>
       <div class="row">
-        <button class="btn btn-dark" data-act="copy" data-v="${esc(url || code)}">Kopieren</button>
-        <a class="btn btn-outline" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
-        ${navigator.share ? `<button class="btn btn-outline" data-act="share" data-v="${esc(msg)}">Teilen…</button>` : ""}
+        <button class="btn btn-dark" data-act="copy" data-v="${esc(url || code)}">Link kopieren</button>
+        <a class="btn btn-outline" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Per WhatsApp</a>
+        ${navigator.share ? `<button class="btn btn-outline" data-act="share" data-v="${esc(msg)}">Teilen</button>` : ""}
       </div>
     </div>`;
   }
   function pastePanel(title) {
     return `<div class="panel">
       <strong>${title}</strong>
-      <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY3.)"></textarea>
-      <button class="btn btn-dark btn-block" data-act="paste">Code laden</button>
+      <textarea class="input" id="paste" placeholder="Link oder Code hier einfügen"></textarea>
+      <button class="btn btn-dark btn-block" data-act="paste">Swipes laden</button>
     </div>`;
   }
 
   function renderInvite() {
     const o = pname(other(me()));
-    return `<section class="screen scroll center-screen top">
-      ${logo()}
-      <div class="big-emoji" aria-hidden="true">💌</div>
-      <h1>${esc(o)} einladen</h1>
-      <p>Schick ${esc(o)} diesen Link. Danach bekommt ihr beide jeden Tag dieselben 15 Gerichte auf euer eigenes Handy.</p>
-      ${sharePanel("Einladungs-Link", "Das musst du nur einmal machen.", true)}
-      <button class="btn btn-primary btn-block" data-act="home" data-autofocus>Jetzt die Gerichte von heute swipen</button>
+    return `<section class="screen scroll">
+      ${topbar()}
+      <div class="page-head">
+        <span class="eyebrow">Einmalig</span>
+        <h1>Lade ${esc(o)} ein</h1>
+        <p>Schick ${esc(o)} diesen Link. Danach bekommt ihr jeden Tag dieselben ${DAILY_DISHES} Gerichte, jede Person auf dem eigenen Handy.</p>
+      </div>
+      ${sharePanel("Einladungs-Link", `${esc(o)} öffnet den Link und bestätigt den eigenen Namen.`, true)}
+      <button class="btn btn-primary btn-block" data-act="home" data-autofocus>Gerichte von heute swipen</button>
     </section>`;
   }
 
   function renderJoin() {
     const host = other(me());
-    return `<section class="screen scroll center-screen top">
-      ${logo()}
-      <div class="big-emoji" aria-hidden="true">🍽️</div>
-      <h1>${esc(pname(host))} sucht mit dir das Mittagessen aus</h1>
-      <p>Jeden Tag gibt es 15 Gerichte zum Swipen. Was ihr beide nach rechts swipt, gibt's am nächsten Tag.</p>
-      <div class="fieldset" style="width:100%;text-align:left">
+    return `<section class="screen scroll">
+      ${topbar()}
+      <div class="page-head">
+        <span class="eyebrow">Einladung</span>
+        <h1>${esc(pname(host))} sucht mit dir das Mittagessen aus</h1>
+        <p>Jeden Tag gibt es ${DAILY_DISHES} Gerichte zum Swipen. Was ihr beide nach rechts swipt, gibt es am nächsten Tag.</p>
+      </div>
+      <div class="fieldset">
         <label><small>Dein Name</small><input id="join-name" maxlength="20" value="${esc(pname(me()))}"></label>
       </div>
-      <button class="btn btn-primary btn-block" data-act="join" data-autofocus>Koppeln & loslegen</button>
+      <button class="btn btn-primary btn-block" data-act="join" data-autofocus>Koppeln und loslegen</button>
     </section>`;
   }
 
@@ -480,18 +509,15 @@
     const count = m.dishes.length + m.desserts.length;
     const flashKey = `${day}:${pos}`;
     if (top.kind === "dessert" && ui.flashed !== flashKey) { ui.flashed = flashKey; setTimeout(bonusFlash, 60); }
-    const pct = (pos / ids.length) * 100;
+    const dishNo = ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length;
     return `<section class="screen" aria-label="Swipen">
-      <header class="topbar">
-        <span class="left who"><span class="av p${p}">${esc(initial(pname(p)))}</span><b>${esc(pname(p))}</b></span>
-        ${logo()}
-        <span class="right">
-          <button class="icon-btn" data-act="results" aria-label="${count} Matches ansehen">${ICON.matches}${count ? `<span class="dot">${count}</span>` : ""}</button>
-          <button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button>
-        </span>
-      </header>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${ids.length}" aria-valuenow="${pos}" aria-label="Fortschritt">
-        <i class="on" style="flex:0 0 ${pct}%"></i><i></i></div>
+      ${topbar(`
+        <button class="icon-btn" data-act="results" aria-label="${count} Matches ansehen">${ICON.matches}${count ? `<span class="dot">${count}</span>` : ""}</button>
+        ${menuBtn()}`)}
+      <div class="daypill">
+        <div><strong>Mittagessen für morgen</strong><span>${esc(fmtDay(addDays(day, 1)))} · ${esc(pname(p))} swipt</span></div>
+        <span class="count" aria-label="${top.kind === "dessert" ? "Bonus-Karte" : `Gericht ${dishNo} von ${DAILY_DISHES}`}">${top.kind === "dessert" ? "+1" : `${dishNo}/${DAILY_DISHES}`}</span>
+      </div>
       <div class="deck">
         ${next ? cardHTML(next, "behind") : ""}
         ${cardHTML(top, "top")}
@@ -499,11 +525,11 @@
       <div class="actions">
         <button class="act sm undo" data-act="undo" aria-label="Rückgängig" ${pos === 0 ? "disabled" : ""}>${ICON.undo}</button>
         <button class="act lg nope" data-act="nope" aria-label="Nö">${ICON.nope}</button>
-        <button class="act sm super" data-act="super" aria-label="Heißhunger (Super-Like), noch ${ds.supers}" ${ds.supers <= 0 ? "disabled" : ""}>${ICON.super}<span class="badge">${ds.supers}</span></button>
+        <button class="act sm super" data-act="super" aria-label="Heißhunger (Super-Like), noch ${ds.supers}" ${ds.supers <= 0 ? "disabled" : ""}>${ICON.super}${ds.supers ? `<span class="count">${ds.supers}</span>` : ""}</button>
         <button class="act lg like" data-act="like" aria-label="Lecker">${ICON.like}</button>
         <button class="act sm info" data-act="info" aria-label="Infos zum Gericht">${ICON.info}</button>
       </div>
-      <p class="swipe-hint">${top.kind === "dessert" ? "🍰 Bonus-Karte" : `Gericht ${ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length} von ${DAILY_DISHES}`} · ← Nö · Lecker → · ↑ Heißhunger</p>
+      <p class="swipe-hint">Links: Nö · Rechts: Lecker · Hoch: Heißhunger</p>
     </section>`;
   }
 
@@ -512,23 +538,25 @@
     const o = pname(other(me()));
     const ds = dayState(day);
     const m = ds.known[other(me())] ? computeMatches(day) : null;
-    return `<section class="screen scroll center-screen top">
-      <header class="topbar" style="width:100%"><span class="left"></span>${logo()}<span class="right"><button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button></span></header>
-      <div class="big-emoji" aria-hidden="true">📨</div>
-      <h1>Fertig für heute, ${esc(pname(me()))}!</h1>
-      <p>Schick ${esc(o)} deine Swipes. Sobald ${esc(o)} die eigenen zurückschickt, seht ihr, was es am ${esc(fmtDay(addDays(day, 1)))} gibt.</p>
-      ${sharePanel("Deine Swipes von heute", `${esc(o)} öffnet den Link oder fügt den Code bei Lunchly ein.`)}
+    return `<section class="screen scroll">
+      ${topbar(menuBtn())}
+      <div class="page-head">
+        <span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>
+        <h1>Fertig für heute, ${esc(pname(me()))}</h1>
+        <p>Schick ${esc(o)} deine Swipes. Sobald ${esc(o)} die eigenen zurückschickt, seht ihr eure Matches.</p>
+      </div>
+      ${sharePanel("Deine Swipes von heute", `${esc(o)} öffnet den Link oder fügt ihn bei Lunchly ein.`)}
       ${pastePanel(`Swipes von ${esc(o)} einfügen`)}
-      ${m ? `<button class="btn btn-primary btn-block" data-act="results">Zwischenstand: ${m.dishes.length + m.desserts.length} Matches</button>` : ""}
+      ${m ? `<button class="btn btn-primary btn-block" data-act="results">Zwischenstand ansehen (${m.dishes.length + m.desserts.length} Matches)</button>` : ""}
     </section>`;
   }
 
   function itemHTML(m, pick, extra = "") {
     const d = m.d;
     return `<button class="item${pick === d.id ? " picked" : ""}" data-act="detail" data-id="${d.id}">
-      <span class="em reg-${d.r}" aria-hidden="true">${d.e}</span>
-      <span style="min-width:0"><span class="nm">${esc(d.n)}${m.sup ? " ⭐" : ""}</span><br><span class="meta">${d.f} ${esc(d.o)}${extra}</span></span>
-      <span class="h" style="background:hsl(${histHue(d.h)} 62% 42%)" aria-label="Histamin ${d.h} von 10">H ${d.h}</span>
+      <span class="thumb" aria-hidden="true">${photo(d)}</span>
+      <span style="min-width:0"><span class="nm">${esc(d.n)}</span><br><span class="meta">${d.f} ${esc(d.o)}${m.sup ? " · Heißhunger" : ""}${extra}</span></span>
+      ${hscore(d.h)}
     </button>`;
   }
 
@@ -540,44 +568,42 @@
     const iDone = ds.pos[me()] >= deckFor(day).length;
     const partnerMissing = !ds.known[other(me())];
     const pickD = ds.pick ? BY_ID.get(ds.pick) : m.dishes[0] ? m.dishes[0].d : null;
-    const eyebrow = `<span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>`;
-    let head;
-    if (partnerMissing) head = `${eyebrow}<h1>Es fehlen noch die Swipes von ${esc(o)}</h1>`;
-    else if (!iDone) head = `${eyebrow}<h1>Zwischenstand: ${m.dishes.length} Match${m.dishes.length === 1 ? "" : "es"}</h1>`;
-    else if (m.dishes.length) head = `${eyebrow}<h1>${m.dishes.length} Match${m.dishes.length === 1 ? "" : "es"}${m.desserts.length ? ` + ${m.desserts.length} Dessert` : ""}</h1>`;
-    else head = `${eyebrow}<h1>Heute kein Match</h1>`;
-    if (m.agree != null && !partnerMissing) head += `<span class="agree">Ihr wart euch bei <b>${m.agree} %</b> der ${m.both} Karten einig</span>`;
+    const n = m.dishes.length;
+    let title;
+    if (partnerMissing) title = `Es fehlen noch die Swipes von ${esc(o)}`;
+    else if (!iDone) title = `Zwischenstand: ${n} ${n === 1 ? "Match" : "Matches"}`;
+    else if (n) title = `${n} ${n === 1 ? "Match" : "Matches"}${m.desserts.length ? ` und ${m.desserts.length} Dessert` : ""}`;
+    else title = "Heute kein Match";
 
-    const winner = pickD ? (() => {
-      const f = fitText(pickD.h);
-      return `<article class="winner">
-        <div class="winner-img reg-${pickD.r}"><span class="badge">${ds.pick ? "🍽️ Morgen gibt's" : "🏆 Top-Match"}</span><span class="emoji" aria-hidden="true">${pickD.e}</span></div>
-        <div class="winner-meta">
-          <h2>${esc(pickD.n)}</h2>
-          <span class="sub">${pickD.f} ${esc(pickD.o)} · ${esc(pickD.t)}</span>
-        </div>
+    const winner = pickD ? `<article class="winner">
+        ${mediaHTML(pickD, { badge: ds.pick ? "Morgen gibt's das" : "Top-Match" })}
+        <div class="title-row"><h2>${esc(pickD.n)}</h2></div>
+        <p class="meta">${pickD.f} ${esc(pickD.o)} · ${esc(pickD.t)}</p>
         ${baroHTML(pickD.h)}
-        <span class="fit" style="color:hsl(${f.hue} 60% var(--hl))">${f.t}</span>
-        <div class="stack-v">
+        ${fitHTML(pickD.h)}
+        <div class="stack">
           ${ds.pick ? "" : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
-          <button class="btn btn-outline btn-block" data-act="detail" data-id="${pickD.id}">Infos & Bestell-Tipp</button>
+          <button class="btn btn-outline btn-block" data-act="detail" data-id="${pickD.id}">Infos und Bestell-Tipp</button>
         </div>
-      </article>`;
-    })() : "";
+      </article>` : "";
 
     return `<section class="screen scroll">
-      <header class="topbar"><span class="left"></span>${logo()}<span class="right"><button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button></span></header>
-      <div class="res-head">${head}</div>
+      ${topbar(menuBtn())}
+      <div class="page-head">
+        <span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>
+        <h1>${title}</h1>
+        ${m.agree != null && !partnerMissing ? `<p class="agree">Ihr wart euch bei <b>${m.agree} %</b> der ${m.both} Karten einig.</p>` : ""}
+      </div>
       ${!iDone ? `<button class="btn btn-primary btn-block" data-act="home">Weiter swipen</button>` : ""}
-      ${partnerMissing && iDone ? sharePanel("Deine Swipes von heute", `Schick sie ${esc(o)}. Dann sieht ${esc(o)} die Matches auch.`) + pastePanel(`Swipes von ${esc(o)} einfügen`) : ""}
+      ${partnerMissing && iDone ? sharePanel("Deine Swipes von heute", `Schick sie ${esc(o)}. Dann seht ihr beide die Matches.`) + pastePanel(`Swipes von ${esc(o)} einfügen`) : ""}
       ${winner}
-      ${m.dishes.length > 1 ? `<button class="btn btn-dark btn-pill btn-block" data-act="roulette">🎲 Lunch-Roulette: Zufall entscheidet</button>` : ""}
-      ${m.dishes.length ? `<div class="stack-v"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
-      ${m.desserts.length ? `<div class="stack-v"><div class="sec-title"><h2>🍰 Dessert-Matches</h2><span>Histamin</span></div><div class="list">${m.desserts.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
-      ${!partnerMissing && iDone && !m.dishes.length ? `<div class="empty"><div class="big-emoji" aria-hidden="true">🥲</div><strong>Diesmal keine Einigung.</strong><p class="disclaimer">Unten stehen Gerichte, die wenigstens eine Person wollte. Morgen gibt es 15 neue Gerichte.</p></div>` : ""}
-      ${!partnerMissing && m.near.length && m.dishes.length < 3 ? `<div class="stack-v"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ds.pick, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
-      ${!partnerMissing && iDone ? sharePanel("Ergebnis teilen", `Falls ${esc(o)} deine Swipes noch nicht hat, schick sie noch einmal.`) : ""}
-      <p class="hint" style="color:var(--muted)">Morgen gibt es 15 neue Gerichte. Die heutigen pausieren ${BLACKLIST_DAYS} Tage.</p>
+      ${n > 1 ? `<button class="btn btn-outline btn-block" data-act="roulette">Zufall entscheiden lassen</button>` : ""}
+      ${n ? `<div class="divider"></div><div class="stack"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
+      ${m.desserts.length ? `<div class="stack"><div class="sec-title"><h2>Dessert-Matches</h2><span>Histamin</span></div><div class="list">${m.desserts.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
+      ${!partnerMissing && iDone && !n ? `<div class="empty"><strong>Diesmal keine Einigung</strong><p class="hint">Unten stehen Gerichte, die wenigstens eine Person wollte. Morgen gibt es ${DAILY_DISHES} neue Gerichte.</p></div>` : ""}
+      ${!partnerMissing && m.near.length && n < 3 ? `<div class="stack"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ds.pick, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
+      ${!partnerMissing && iDone ? `<div class="divider"></div>${sharePanel("Ergebnis teilen", `Falls ${esc(o)} deine Swipes noch nicht hat, schick sie noch einmal.`)}` : ""}
+      <p class="hint">Morgen gibt es ${DAILY_DISHES} neue Gerichte. Die heutigen pausieren ${BLACKLIST_DAYS} Tage.</p>
       <p class="disclaimer">Das Histamin-Barometer ist ein Richtwert. Er basiert auf typischen Zutaten, angelehnt an die SIGHI-Verträglichkeitsliste. Rezepte und Verträglichkeit sind unterschiedlich. Das ist keine medizinische Beratung.</p>
     </section>`;
   }
@@ -593,27 +619,25 @@
 
   function showDetail(id, fromDeck) {
     const d = BY_ID.get(id);
-    const f = fitText(d.h);
-    const tags = tagList(d);
     openSheet(`<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(d.n)}">
-      <div class="sheet-hero reg-${d.r}">
-        <button class="sheet-close" data-act="close" aria-label="Schließen">${ICON.close}</button>
-        <span class="emoji" aria-hidden="true">${d.e}</span>
-      </div>
+      ${mediaHTML(d, { extra: `<button class="sheet-close" data-act="close" aria-label="Schließen">${ICON.close}</button>` })}
       <div class="sheet-content">
-        <div><h2>${esc(d.n)}</h2><p class="sub">${d.f} ${esc(d.o)}${d.kind === "dessert" ? " · Dessert-Bonus" : ""}</p></div>
+        <div class="stack" style="gap:4px">
+          <div class="title-row"><h2>${esc(d.n)}</h2>${hscore(d.h)}</div>
+          <p class="meta">${d.f} ${esc(d.o)}${d.kind === "dessert" ? " · Dessert-Bonus" : ""}</p>
+        </div>
         <div class="divider"></div>
-        <div class="fact"><span class="ico" aria-hidden="true">🗺️</span><strong>Herkunft & Geschichte</strong><p>${esc(d.x)}</p></div>
-        <div class="fact"><span class="ico" aria-hidden="true">✨</span><strong>Besonderheit</strong><p>${esc(d.s)}</p></div>
-        <div class="fact"><span class="ico" aria-hidden="true">😄</span><strong>In einem Satz</strong><p>${esc(d.t)}</p></div>
-        <div class="gauge-wrap">
+        <div class="fact">${ICON.pin}<strong>Herkunft und Geschichte</strong><p>${esc(d.x)}</p></div>
+        <div class="fact">${ICON.spark}<strong>Besonderheit</strong><p>${esc(d.s)}</p></div>
+        <div class="fact">${ICON.quote}<strong>In einem Satz</strong><p>${esc(d.t)}</p></div>
+        <div class="gauge-card">
           <span class="title">Histamin-Barometer</span>
           ${gaugeSVG(d.h)}
           <p class="gauge-note">${esc(d.hn)}</p>
-          <span class="fit" style="color:hsl(${f.hue} 60% var(--hl))">${f.t}</span>
+          ${fitHTML(d.h)}
         </div>
-        ${tags.length ? `<div class="tags">${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
-        ${fromDeck ? `<div class="row"><button class="btn btn-outline" data-act="nope">✕ Nö</button><button class="btn btn-primary" data-act="like" data-autofocus>♥ Lecker</button></div>` : ""}
+        ${tagsHTML(d)}
+        ${fromDeck ? `<div class="row"><button class="btn btn-outline" data-act="nope">Nö</button><button class="btn btn-primary" data-act="like" data-autofocus>Lecker</button></div>` : ""}
         <p class="disclaimer">Histamin-Werte sind Richtwerte anhand typischer Zutaten. Keine medizinische Beratung.</p>
       </div>
     </div>`);
@@ -621,27 +645,29 @@
 
   function showMenu() {
     const view = ui.view || autoView();
-    const items = [];
+    const rows = [];
     if (st.pair && !st.pair.pending) {
-      if (view !== "results") items.push(`<button class="btn btn-ghost btn-block" data-act="results">Matches für morgen</button>`);
-      if (view !== "swipe" && view !== "share") items.push(`<button class="btn btn-ghost btn-block" data-act="home">Zurück zu heute</button>`);
-      items.push(pastePanel(`Swipes von ${esc(pname(other(me())))} einfügen`));
-      items.push(`<button class="btn btn-ghost btn-block" data-act="invite">Einladungs-Link erneut teilen</button>`);
-      items.push(`<button class="btn btn-ghost btn-block" data-act="reset" style="color:var(--nope)">${ui.confirmReset ? "Wirklich entkoppeln? Nochmal tippen" : "Kopplung aufheben"}</button>`);
+      if (view !== "results") rows.push(`<button class="menu-row" data-act="results">Matches für morgen</button>`);
+      if (view !== "swipe" && view !== "share") rows.push(`<button class="menu-row" data-act="home">Zurück zu heute</button>`);
+      rows.push(`<button class="menu-row" data-act="invite">Einladungs-Link teilen</button>`);
+      rows.push(pastePanel(`Swipes von ${esc(pname(other(me())))} einfügen`));
+      rows.push(`<button class="menu-row danger" data-act="reset">${ui.confirmReset ? "Wirklich entkoppeln? Zum Bestätigen tippen" : "Kopplung aufheben"}</button>`);
     }
     openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="Menü">
-      ${logo()}
-      ${st.pair && !st.pair.pending ? `<p class="hint" style="color:var(--muted)">Gekoppelt mit ${esc(pname(other(me())))} · täglich ${DAILY_DISHES} Gerichte · Pause ${BLACKLIST_DAYS} Tage</p>` : ""}
-      <div class="stack-v">${items.join("")}</div>
-      <button class="link-btn" data-act="close" data-autofocus>Schließen</button>
+      <div class="menu-head">
+        <strong>${st.pair && !st.pair.pending ? `Gekoppelt mit ${esc(pname(other(me())))}` : "Lunchly"}</strong>
+        <span class="hint">${DAILY_DISHES} Gerichte pro Tag · Pause nach dem Swipen: ${BLACKLIST_DAYS} Tage</span>
+      </div>
+      ${rows.join("")}
+      <button class="btn btn-outline btn-block" data-act="close" data-autofocus>Schließen</button>
     </div>`);
   }
 
   function showMatch(d, sup) {
     openSheet(`<div class="match-box" role="dialog" aria-modal="true" aria-label="Match">
       <h2>It's a Lunch!</h2>
-      <p>${esc(pname(0))} und ${esc(pname(1))} haben beide Lust auf <b>${esc(d.n)}</b>${sup ? " ⭐" : ""}.</p>
-      <div class="match-faces" aria-hidden="true"><span class="av big p0">${esc(initial(pname(0)))}</span><span class="match-dish reg-${d.r}">${d.e}</span><span class="av big p1">${esc(initial(pname(1)))}</span></div>
+      <p>${esc(pname(0))} und ${esc(pname(1))} haben beide Lust auf <b>${esc(d.n)}</b>${sup ? ", mit Heißhunger" : ""}.</p>
+      <div class="match-faces" aria-hidden="true"><span class="av big p0">${esc(initial(pname(0)))}</span><span class="match-dish">${photo(d)}</span><span class="av big p1">${esc(initial(pname(1)))}</span></div>
       ${baroHTML(d.h)}
       <button class="btn btn-primary btn-pill" data-act="pick" data-id="${d.id}">Das gibt's morgen</button>
       <button class="btn btn-outline btn-pill" data-act="close" data-autofocus>Weiter swipen</button>
@@ -651,7 +677,7 @@
   function bonusFlash() {
     const el = document.createElement("div");
     el.className = "bonus-flash";
-    el.innerHTML = "<span>🍰 Dessert-Bonus!</span>";
+    el.innerHTML = "<span>Dessert-Bonus</span>";
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 1400);
   }
@@ -665,7 +691,7 @@
     const i = ds.pos[p];
     if (i >= ids.length) return;
     if (val === 2) {
-      if (ds.supers <= 0) { toast("Heute kein Heißhunger-Joker mehr"); val = 1; }
+      if (ds.supers <= 0) { toast("Heute kein Heißhunger mehr übrig"); val = 1; }
       else ds.supers--;
     }
     ds.sw[p][i] = val;
@@ -693,14 +719,14 @@
     ds.pos[p] = i;
     persist();
     render();
-    toast("Rückgängig ↺");
+    toast("Letzter Swipe zurückgenommen");
   }
 
   function fly(val) {
     if (ui.busy) return;
     const card = $(".card.top", app);
     if (!card) return;
-    if (val === 2 && dayState(today()).supers <= 0) { toast("Heute kein Heißhunger-Joker mehr"); return; }
+    if (val === 2 && dayState(today()).supers <= 0) { toast("Heute kein Heißhunger mehr übrig"); return; }
     ui.busy = true;
     const w = window.innerWidth, h = window.innerHeight;
     const [tx, ty, rot] = val === 0 ? [-w * 1.2, 40, -24] : val === 1 ? [w * 1.2, 40, 24] : [0, -h, 0];
@@ -747,7 +773,7 @@
     card.addEventListener("pointercancel", end);
   }
 
-  // ── Roulette ──────────────────────────────────────────────
+  // ── Zufallsentscheidung ───────────────────────────────────
   function roulette() {
     const day = today();
     const m = computeMatches(day).dishes;
@@ -766,7 +792,7 @@
       if (k >= steps) {
         dayState(day).pick = m[win].d.id;
         persist();
-        setTimeout(() => { render(); toast(`Morgen gibt's: ${m[win].d.n} 🎉`); }, 500);
+        setTimeout(() => { render(); toast(`Morgen gibt's ${m[win].d.n}`); }, 500);
         return;
       }
       k++;
@@ -779,7 +805,7 @@
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-      toast("Kopiert ✓");
+      toast("Link kopiert");
     } catch {
       const box = $("#code-box");
       if (box) {
@@ -787,7 +813,7 @@
         range.selectNodeContents(box);
         const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
       }
-      toast("Markiert. Jetzt kopieren und einfügen.");
+      toast("Link markiert. Jetzt kopieren und einfügen.");
     }
   }
 
@@ -814,7 +840,7 @@
       dayState(today()).pick = el.dataset.id;
       ui.afterMatch = null;
       go("results");
-      toast(`Morgen gibt's: ${BY_ID.get(el.dataset.id).n} 🎉`);
+      toast(`Morgen gibt's ${BY_ID.get(el.dataset.id).n}`);
     },
     results: () => go("results"),
     home: () => go(null),
