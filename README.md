@@ -8,7 +8,8 @@
 - **15 Gerichte pro Tag:** Ein Zufallsgenerator stellt jeden Tag 15 Gerichte zusammen
 - **Blacklist:** Gerichte, die schon dran waren, pausieren 7 Tage (`BLACKLIST_DAYS` in `js/app.js`) und kommen erst danach wieder in den Zufallsgenerator
 - **Ein Handy pro Person:** Einmal per Einladungs-Link koppeln. Beide Handys berechnen aus dem gemeinsamen Kopplungs-Seed und dem Datum **dieselben 15 Gerichte**, ganz ohne Server oder Login
-- **Swipes austauschen:** Nach dem Swipen schickt man seine Swipes als Link (z. B. per WhatsApp). Was beide mögen, ist ein Match fürs Mittagessen am nächsten Tag. Sind die Swipes der anderen Person schon da, poppen Matches live auf
+- **Live-Abgleich (Supabase):** Ist `js/config.js` ausgefüllt, sehen beide Handys automatisch die Swipes, den Fortschritt, die Wahl fürs Mittagessen, die Namen und das Wunschbuch der anderen Person. Kein Link-Verschicken nötig (Einrichtung siehe unten)
+- **Ohne Server:** Ohne Supabase-Konfiguration schickt man nach dem Swipen seine Swipes als Link (z. B. per WhatsApp). Was beide mögen, ist ein Match fürs Mittagessen am nächsten Tag
 - **Histamin-Barometer (1–10) bei jedem Gericht**, fest angezeigt, mit Tachonadel, Erklärung und Bestell-Tipp
 - **Dessert-Bonus-Swipes:** An manchen Tagen werden 1–2 von 25 Desserts zufällig eingemischt
 - **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 1 pro Tag), Rückgängig, Match-Popup
@@ -17,8 +18,10 @@
 - **Sterne:** Jedes Gericht hat 5 Sterne, die sich füllen, je öfter es gewählt wurde (ab 1, 2, 3, 5 und 8 Wahlen). Die Top 3 bekommen eine Platzierung (#1, #2, #3), dazu die Liste „Eure Lieblingsgerichte“. Die Wahl des Tages wird über den Swipe-Link mit dem anderen Handy abgeglichen
 - **Untere Navigation** wie bei Airbnb: Swipen · Morgen · Wunschbuch · Profil
 - **Wunschbuch:** Rezepte, Restaurants, Links und Ideen speichern, filtern, bearbeiten, löschen. Jedes Gericht lässt sich mit „Ins Wunschbuch“ direkt übernehmen
-- **Kalorien & Tagesbilanz:** Jedes Gericht hat einen Kalorien-Schätzwert pro Portion. Ist das Essen für morgen entschieden, zeigt die Tagesbilanz, wie viel man am Rest des Tages noch essen kann, ohne zuzunehmen (Tagesbedarf nach Mifflin-St-Jeor aus Geschlecht, Alter, Größe, Gewicht, Aktivität; Ziel „halten“ oder „leicht abnehmen“), optional mit Dessert, plus Vorschlag zur Verteilung auf Frühstück, Abendessen und Snacks
-- **Match-Animation** (Remotion-Video): Der pinke Screen ploppt aus der Kamera, das Herz dreht sich von hinten heran und pocht, „It's a Lunch!“ wird mit Schwung geschrieben
+- **Kalorien & Tagesbilanz:** Jedes Gericht hat einen Kalorien-Schätzwert pro Portion. Ist das Essen für morgen entschieden, zeigt die Tagesbilanz, wie viel man am Rest des Tages noch essen kann, ohne zuzunehmen (Tagesbedarf nach Mifflin-St-Jeor aus Geschlecht, Alter, Größe, Gewicht, Aktivität; Ziel „halten“ oder „leicht abnehmen“), Umschalter Heute/Morgen. Ein gematchtes Dessert zählt automatisch mit (Matches lassen sich nicht herausrechnen). Frühstück, Snacks, Abendessen und Getränke kann man eintragen, damit man die restlichen Kalorien des Tages im Blick behält
+- **Erinnerung um 18:00:** Ein Popup erinnert daran, das Match für morgen zu „catchen“, solange man noch nicht fertig geswipt hat (einmal pro Tag, im Profil abschaltbar). Ist die App im Hintergrund geöffnet und die Mitteilungs-Berechtigung erteilt, kommt sie als System-Benachrichtigung
+- **Match-Animation:** Der pinke Screen ploppt aus der Kamera (ohne Nachfedern), das Herz dreht sich von hinten heran und pocht, „It's a Lunch!“ wird mit Schwung geschrieben. Beim Schließen zieht sich alles ins weiße Herz zurück und das Herz fällt unten aus dem Bild. Läuft in der App nativ (CSS/SVG), dazu gibt es dieselbe Choreografie als Remotion-Video
+- **Startscreen:** Die Gerichtskarten ploppen nacheinander aus dem Stapel und die vordere Karte deutet einen Wisch an. Beim App-Start ploppt auch der Swipe-Stapel herein
 - **Ladebildschirm** mit dem Lunchly-Logo, dessen Dampfstreifen sich in Wellen bewegen
 - **Lebendige Details:** Aktions-Buttons wachsen beim Wischen mit und färben sich, Karten rücken animiert nach, das Histamin-Barometer füllt sich, beim Match gibt es Herzregen und eine kurze Vibration (Android), das Match-Herz oben hüpft bei jedem neuen Match
 - **Tagesabschluss:** gelikt / Heißhunger / Tage in Folge (Serie) und ein Countdown bis zu den nächsten 15 Gerichten
@@ -52,12 +55,32 @@ Für GitHub Pages reicht es, den Branch zu veröffentlichen.
 node tools/build-standalone.mjs   # → dist/lunchly.html
 ```
 
+## Live-Abgleich mit Supabase einrichten
+
+1. Kostenloses Projekt auf [supabase.com](https://supabase.com) anlegen.
+2. Im Dashboard unter **SQL Editor** den Inhalt von `supabase/schema.sql` einfügen und ausführen.
+3. Unter **Project Settings → API** die **Project URL** und den **anon public key** kopieren und in `js/config.js` eintragen:
+
+```js
+window.LUNCHLY_CONFIG = {
+  supabaseUrl: "https://xyzcompany.supabase.co",
+  supabaseAnonKey: "eyJhbGciOi…",
+};
+```
+
+Fertig. Beide Handys gleichen sich dann sofort (Realtime) und zusätzlich alle 45 Sekunden ab. Der anon-Key darf öffentlich sein: Die Tabellen sind per Row Level Security gesperrt, die App kommt nur über Funktionen an die Daten, und jede Funktion verlangt die 20-stellige Kopplungs-ID, die nur die beiden Handys kennen.
+
+Hinweis: Die 18-Uhr-Erinnerung erscheint, wenn die App geöffnet ist oder im Hintergrund läuft. Für eine Push-Nachricht bei komplett geschlossener App braucht es zusätzlich Web Push (z. B. Supabase Edge Function mit Cron und VAPID-Schlüsseln).
+
 ## Struktur
 
 ```
 index.html                        App-Shell
 css/style.css                     Design (Tokens, Light/Dark)
-js/app.js                         Logik: Deck, Swipes, Matching, Codes, Rendering
+js/app.js                         Logik: Deck, Swipes, Matching, Live-Abgleich, Rendering
+js/config.js                      Supabase-Zugangsdaten (optional)
+js/vendor/supabase.js             supabase-js (MIT), wird nur mit Konfiguration geladen
+supabase/schema.sql               Datenbank-Schema für den Live-Abgleich
 js/data/dishes-deutschland.js     Hausmannskost DE/AT/CH (60)
 js/data/dishes-europa.js          Italien, Europa, Orient (46)
 js/data/dishes-international.js   Asien & Amerika (44)
@@ -86,13 +109,14 @@ Das Foto erscheint dann automatisch auf der Swipe-Karte, in der Detailansicht, b
 
 ## Match-Animation (Remotion)
 
-Die Animation liegt als Code in `video/` und als fertige Videos in `media/` (hell und dunkel, je MP4 und WebM, ca. 200 KB).
+In der App läuft die Match-Animation nativ (CSS und SVG), damit sie nahtlos ein- und ausblendet. Dieselbe Choreografie gibt es als Remotion-Video, z. B. für Präsentationen, Social Media oder den App-Store: Code in `video/`, fertige Videos in `media/` (hell und dunkel, je MP4 und WebM, 5 Sekunden).
 
 ```bash
 cd video
 npm install
 npm run studio     # Animation im Browser bearbeiten und Vorschau ansehen
 npm run render     # media/match-intro.mp4 neu rendern
+npm run render:dark
 ```
 
 ## Schriften

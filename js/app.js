@@ -20,6 +20,7 @@
   const DAILY_DISHES = 15;
   const BLACKLIST_DAYS = 7;
   const SUPERS_PER_DAY = 1;
+  const REMINDER_HOUR = 18; // Erinnerung „Match für morgen catchen“ um 18:00
   const KEEP_DAYS = 30;
   const KEY = "lunchly.v3";
   const CODE_PREFIX = "LY3.";
@@ -47,6 +48,7 @@
   const parseDay = (key) => { const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d); };
   const addDays = (key, n) => { const dt = parseDay(key); dt.setDate(dt.getDate() + n); return dayKey(dt); };
   const today = () => window.LUNCHLY_TODAY || dayKey(new Date());
+  const nowDate = () => (window.LUNCHLY_NOW ? new Date(window.LUNCHLY_NOW) : new Date()); // für Tests überschreibbar
   const fmtDay = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const fmtShort = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
 
@@ -128,7 +130,12 @@
     }
     return a;
   }
-  const newSeed = () => Math.random().toString(36).slice(2, 10);
+  // Zufalls-IDs; die Kopplungs-ID ist zugleich der Zugangsschlüssel zum Server, daher lang und kryptografisch
+  const newSeed = (len = 20) => {
+    const a = new Uint8Array(len);
+    try { crypto.getRandomValues(a); } catch { for (let i = 0; i < len; i++) a[i] = Math.random() * 256; }
+    return Array.from(a, (x) => "abcdefghijklmnopqrstuvwxyz0123456789"[x % 36]).join("");
+  };
 
   // ── Tagesauswahl mit Blacklist ────────────────────────────
   // Die Auswahl eines Tages hängt von den Vortagen ab (Blacklist). Deshalb wird ab dem Kopplungstag
@@ -170,11 +177,11 @@
   // ── Zustand ───────────────────────────────────────────────
   // st.pair  = { seed, start, players: [{name}, {name}], me, pending }
   // st.days  = { "YYYY-MM-DD": { sw: [[], []], pos: [0, 0], supers, known: [bool, bool], pick } }
-  const st = Object.assign({ pair: null, days: {}, draft: ["", ""], streak: { last: null, count: 0 }, picks: {}, profile: null, wish: [] }, store.load());
+  const st = Object.assign({ pair: null, days: {}, draft: ["", ""], streak: { last: null, count: 0 }, picks: {}, profile: null, wish: [], kcalLog: {}, settings: { reminder: true }, reminderShown: null }, store.load());
   const ui = {
     view: null, busy: false, flashed: "", sheet: null, afterMatch: null, confirmReset: false, cardAnim: "", lastCount: null,
     onb: "welcome", pairMode: "invite", draftName: undefined, draftPhoto: undefined,
-    wishFilter: "alle", wishKind: "rezept", confirmDelete: null, withDessert: false, backTo: null,
+    wishFilter: "alle", wishKind: "rezept", confirmDelete: null, kcalDay: null, kcalLabel: "Frühstück", backTo: null,
   };
   const buzz = (pattern) => { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* nicht unterstützt */ } };
 
@@ -200,6 +207,7 @@
   function persist() {
     const cutoff = addDays(today(), -KEEP_DAYS);
     Object.keys(st.days).forEach((k) => { if (k < cutoff) delete st.days[k]; });
+    Object.keys(st.kcalLog).forEach((k) => { if (k < cutoff) delete st.kcalLog[k]; });
     store.save(st);
   }
   const P = () => st.pair;
@@ -223,9 +231,10 @@
   // ── Sterne: je öfter ein Gericht gewählt wurde, desto mehr Sterne ──
   // st.picks = { "YYYY-MM-DD": dishId } – pro Tag zählt die endgültige Wahl („Das gibt's morgen“)
   const STAR_STEPS = [1, 2, 3, 5, 8]; // ab so vielen Wahlen gibt es 1, 2, 3, 4, 5 Sterne
-  function setPick(day, id) {
+  function setPick(day, id, { push = true } = {}) {
     dayState(day).pick = id;
     st.picks[day] = id;
+    if (push && typeof syncPushDay === "function") syncPushDay(day);
   }
   function pickStats() {
     const counts = new Map();
@@ -420,6 +429,126 @@
     }
     go(null);
     return true;
+  }
+
+  // ── Live-Abgleich über Supabase (optional) ────────────────
+  // Ist js/config.js ausgefüllt, gleichen beide Handys Swipes, Wahl, Namen und Wunschbuch automatisch ab.
+  // Ohne Konfiguration funktioniert die App wie bisher mit Links.
+  const CFG = window.LUNCHLY_CONFIG || {};
+  const sync = { on: false, ready: null, client: null, channel: null, chanFor: null, pushTimer: null, pulling: false };
+  const syncActive = () => sync.on && st.pair && !st.pair.pending;
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src; el.onload = resolve; el.onerror = reject;
+      document.head.appendChild(el);
+    });
+  }
+  function initSync() {
+    if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || L.embedded) return;
+    sync.on = true;
+    sync.ready = (window.supabase ? Promise.resolve() : loadScript("js/vendor/supabase.js"))
+      .then(() => { sync.client = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: false } }); })
+      .catch(() => { sync.on = false; });
+  }
+  async function rpc(fn, args) {
+    await sync.ready;
+    if (!sync.client) throw new Error("Kein Server");
+    const { data, error } = await sync.client.rpc(fn, args);
+    if (error) throw error;
+    return data;
+  }
+  function subscribe() {
+    if (!syncActive() || !sync.client || sync.chanFor === P().seed) return;
+    try {
+      if (sync.channel) sync.client.removeChannel(sync.channel);
+      sync.chanFor = P().seed;
+      sync.channel = sync.client.channel(`lunchly-${P().seed}`)
+        .on("broadcast", { event: "changed" }, (msg) => { if (!msg.payload || msg.payload.who !== me()) syncPull(); })
+        .subscribe();
+    } catch { /* Live-Kanal optional, es wird zusätzlich regelmäßig abgefragt */ }
+  }
+  function notifyPartner() {
+    try { if (sync.channel) sync.channel.send({ type: "broadcast", event: "changed", payload: { who: me() } }); } catch { /* egal */ }
+  }
+  async function syncPull() {
+    if (!syncActive() || sync.pulling) return;
+    sync.pulling = true;
+    try {
+      await sync.ready;
+      subscribe();
+      const seed = P().seed;
+      const [pair, rows, wishes] = await Promise.all([
+        rpc("lunchly_get_pair", { p_id: seed }),
+        rpc("lunchly_get_days", { p_id: seed, p_from: addDays(today(), -KEEP_DAYS) }),
+        rpc("lunchly_list_wishes", { p_id: seed }),
+      ]);
+      if (!st.pair || st.pair.seed !== seed) return;
+      if (!pair) { await syncCreatePair(); await syncName(); return; } // Paar existiert noch nicht auf dem Server
+      let changed = false;
+      const o = other(me());
+      if (Array.isArray(pair.names) && pair.names[o] && pair.names[o] !== pname(o)) { st.pair.players[o].name = pair.names[o]; changed = true; }
+      const picks = {};
+      for (const r of rows || []) {
+        const day = String(r.day).slice(0, 10);
+        if (r.who !== me()) {
+          const ds = dayState(day);
+          const len = deckFor(day).length;
+          const sw = unpack(r.swipes || "", len);
+          if (r.pos !== ds.pos[r.who] || !ds.known[r.who] || sw.join() !== ds.sw[r.who].slice(0, len).join()) {
+            ds.sw[r.who] = sw; ds.pos[r.who] = Math.min(r.pos, len); ds.known[r.who] = r.pos > 0; changed = true;
+          }
+        }
+        // Die jüngste Wahl des Tages gilt für beide
+        if (r.pick && BY_ID.has(r.pick) && (!picks[day] || String(r.pick_at) > String(picks[day].at))) picks[day] = { id: r.pick, at: r.pick_at };
+      }
+      for (const [day, pk] of Object.entries(picks)) if (dayState(day).pick !== pk.id) { setPick(day, pk.id, { push: false }); changed = true; }
+      if (Array.isArray(wishes)) {
+        const mapped = wishes.map((w) => ({ id: w.id, kind: w.kind, title: w.title, url: w.url || "", note: w.note || "", dishId: w.dish_id || null, at: Date.parse(w.created_at) || Date.now() }));
+        if (JSON.stringify(mapped) !== JSON.stringify(st.wish)) { st.wish = mapped; changed = true; }
+      }
+      if (changed) { persist(); if (!ui.sheet && !ui.busy && !ui.dragging) render(); }
+    } catch { /* offline: beim nächsten Mal erneut */ }
+    finally { sync.pulling = false; }
+  }
+  function syncPushDay(day = today()) {
+    if (!syncActive()) return;
+    clearTimeout(sync.pushTimer);
+    sync.pushTimer = setTimeout(async () => {
+      const ds = dayState(day);
+      try {
+        await rpc("lunchly_put_day", { p_id: P().seed, p_day: day, p_who: me(), p_swipes: pack(ds.sw[me()], deckFor(day).length), p_pos: ds.pos[me()], p_pick: ds.pick || null });
+        notifyPartner();
+      } catch { /* offline: wird beim nächsten Swipe erneut gesendet */ }
+    }, 300);
+  }
+  async function syncCreatePair() {
+    if (!syncActive()) return;
+    try { await rpc("lunchly_create_pair", { p_id: P().seed, p_start: P().start, p_names: P().players.map((pl) => pl.name) }); } catch { /* offline */ }
+  }
+  async function syncName() {
+    if (!syncActive()) return;
+    try { await rpc("lunchly_set_name", { p_id: P().seed, p_who: me(), p_name: pname(me()) }); notifyPartner(); } catch { /* offline */ }
+  }
+  async function syncWish(w) {
+    if (!syncActive()) return;
+    try { await rpc("lunchly_put_wish", { p_id: P().seed, p_wish: w }); notifyPartner(); } catch { /* offline */ }
+  }
+  async function syncWishDelete(id) {
+    if (!syncActive()) return;
+    try { await rpc("lunchly_delete_wish", { p_id: P().seed, p_wish_id: id }); notifyPartner(); } catch { /* offline */ }
+  }
+  // Fortschritt der anderen Person (nur mit Live-Abgleich sichtbar)
+  function partnerProgressHTML(day) {
+    const ds = dayState(day);
+    const o = other(me());
+    const n = deckFor(day).length;
+    const pos = ds.known[o] ? ds.pos[o] : 0;
+    return `<div class="partner-progress">
+      ${avHTML(o, "md")}
+      <div><strong>${esc(pname(o))}</strong><span class="hint">${pos >= n ? "ist fertig" : pos ? `hat ${pos} von ${n} Karten geswipt` : "hat heute noch nicht geswipt"}</span></div>
+      <span class="live-dot" title="Live verbunden"></span>
+    </div>`;
   }
 
   // ── Matches ───────────────────────────────────────────────
@@ -719,7 +848,10 @@
     const flashKey = `${day}:${pos}`;
     if (top.kind === "dessert" && ui.flashed !== flashKey) { ui.flashed = flashKey; setTimeout(bonusFlash, 60); }
     const dishNo = ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length;
-    const anim = ui.cardAnim;
+    // Beim ersten Öffnen ploppen die Karten aus dem Stapel
+    const deal = ui.dealt ? "" : " deal";
+    ui.dealt = true;
+    const anim = ui.cardAnim + deal;
     ui.cardAnim = "";
     const streak = streakNow();
     return `<section class="screen" aria-label="Swipen">
@@ -730,7 +862,7 @@
         <span class="count" aria-label="${top.kind === "dessert" ? "Bonus-Karte" : `Gericht ${dishNo} von ${DAILY_DISHES}`}">${top.kind === "dessert" ? "+1" : `${dishNo}/${DAILY_DISHES}`}</span>
       </div>
       <div class="deck">
-        ${next ? cardHTML(next, "behind") : ""}
+        ${next ? cardHTML(next, `behind${deal}`) : ""}
         ${cardHTML(top, `top fill ${anim}`)}
       </div>
       <div class="actions">
@@ -753,10 +885,10 @@
       <div class="page-head">
         <span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>
         <h1>Fertig für heute, ${esc(pname(me()))}</h1>
-        <p>Sobald ${esc(o)} auch fertig ist, findest du eure Matches unter „Morgen“.</p>
+        <p>Sobald ${esc(o)} auch fertig ist, findest du eure Matches unter „Morgen“.${syncActive() ? " Ihr seid live verbunden." : ""}</p>
       </div>
       ${statsHTML(day)}
-      ${sendButtons()}
+      ${syncActive() ? partnerProgressHTML(day) : sendButtons()}
       ${m ? `<button class="btn btn-outline btn-block" data-act="tab" data-v="results">Zwischenstand: ${m.dishes.length + m.desserts.length} Matches</button>` : ""}
       ${countdownHTML()}
     </section>`;
@@ -823,7 +955,7 @@
         ${fitHTML(pickD.h)}
         <div class="stack">
           ${ds.pick
-            ? `<button class="btn btn-primary btn-block" data-act="kcal">${ICON.flame} Tagesbilanz ansehen</button>`
+            ? `<button class="btn btn-primary btn-block" data-act="kcal" data-v="tomorrow">${ICON.flame} Tagesbilanz ansehen</button>`
             : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
           <button class="btn btn-outline btn-block" data-act="detail" data-id="${pickD.id}">Infos und Bestell-Tipp</button>
         </div>
@@ -837,7 +969,7 @@
         ${m.agree != null && !partnerMissing ? `<p class="agree">Ihr wart euch bei <b>${m.agree} %</b> der ${m.both} Karten einig.</p>` : ""}
       </div>
       ${!iDone ? `<button class="btn btn-primary btn-block" data-act="tab" data-v="today">Weiter swipen</button>` : ""}
-      ${partnerMissing && iDone ? sendButtons() : ""}
+      ${syncActive() && iDone && ds.pos[other(me())] < deckFor(day).length ? partnerProgressHTML(day) : partnerMissing && iDone ? sendButtons() : ""}
       ${winner}
       ${n > 1 && !ds.pick ? `<button class="btn btn-outline btn-block" data-act="roulette">Zufall entscheiden lassen</button>` : ""}
       ${n ? `<div class="divider"></div><div class="stack"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
@@ -873,13 +1005,15 @@
       <div class="me-head">${avHTML(me(), "xl")}<div><h1>${esc(st.profile.name)}</h1><span class="hint">Gekoppelt mit ${esc(o)}</span></div></div>
       <div class="rows">
         ${row("profile", "Profil bearbeiten")}
+        ${row("kcal", "Tagesbilanz", "")}
         ${row("kcal-setup", "Kalorien-Ziel", body ? `${fmtNum(kcalTarget(body))} kcal am Tag` : "Einrichten")}
+        <button class="menu-row switch-row" data-act="reminder" aria-pressed="${!!st.settings.reminder}"><span>Erinnerung um ${pad(REMINDER_HOUR)}:00</span><span class="switch" aria-hidden="true"></span></button>
         <button class="menu-row switch-row" data-act="theme" aria-pressed="${dark}"><span>Dunkler Modus</span><span class="switch" aria-hidden="true"></span></button>
         ${row("invite", "Einladungs-Link teilen")}
         ${row("paste-link", "Link einfügen")}
       </div>
       ${favoritesHTML(10) || `<div class="empty"><strong>Noch keine Lieblingsgerichte</strong><p class="hint">Jedes Gericht, das ihr wählt, bekommt Sterne. Die meistgewählten landen hier.</p></div>`}
-      <p class="hint">${DAILY_DISHES} Gerichte pro Tag · Pause nach dem Swipen: ${BLACKLIST_DAYS} Tage</p>
+      <p class="hint">${DAILY_DISHES} Gerichte pro Tag · Pause nach dem Swipen: ${BLACKLIST_DAYS} Tage${syncActive() ? " · Live-Abgleich aktiv" : ""}</p>
       <button class="menu-row danger" data-act="reset">${ui.confirmReset ? "Wirklich entkoppeln? Zum Bestätigen tippen" : "Kopplung aufheben"}</button>
     </section>`;
   }
@@ -985,51 +1119,79 @@
     </section>`;
   }
 
+  // Tagesbilanz: gilt für den Tag, an dem gegessen wird. Gewählt wird am Vortag,
+  // daher zeigt „Heute“ das gestern gewählte Essen und „Morgen“ das heute gewählte.
+  function kcalDays() {
+    const t = today();
+    return { today: { swipe: addDays(t, -1), eat: t }, tomorrow: { swipe: t, eat: addDays(t, 1) } };
+  }
   function renderKcal() {
-    const day = today();
-    const ds = dayState(day);
-    const pickD = ds.pick && BY_ID.get(ds.pick);
+    const days = kcalDays();
+    const hasToday = !!dayState(days.today.swipe).pick;
+    if (!ui.kcalDay) ui.kcalDay = hasToday ? "today" : "tomorrow";
+    const which = ui.kcalDay;
+    const { swipe, eat } = days[which];
+    const pickD = dayState(swipe).pick && BY_ID.get(dayState(swipe).pick);
     const body = st.profile.body;
-    const head = `<header class="onb-head"><button class="icon-btn" data-act="tab" data-v="results" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>`;
+    const head = `<header class="onb-head"><button class="icon-btn" data-act="tab" data-v="${ui.kcalBack === "me" ? "me" : "results"}" aria-label="Zurück">${ICON.back}</button><span></span>${themeBtn()}</header>`;
+    const seg = `<div class="segmented" role="tablist">${[["today", "Heute"], ["tomorrow", "Morgen"]].map(([v, l]) =>
+      `<button role="tab" data-act="kcal-day" data-v="${v}" aria-selected="${which === v}">${l}</button>`).join("")}</div>`;
+    const dayLabel = `${which === "today" ? "Heute" : "Morgen"}, ${fmtDay(eat)}`;
     if (!pickD) {
-      return `<section class="screen scroll">${head}<div class="page-head"><h1>Tagesbilanz</h1><p>Sobald ihr euch für das Mittagessen von morgen entschieden habt, siehst du hier die Kalorien.</p></div>
-        <button class="btn btn-primary btn-block" data-act="tab" data-v="results">Zu den Matches</button></section>`;
+      return `<section class="screen scroll">${head}${seg}
+        <div class="page-head"><span class="eyebrow">${esc(dayLabel)}</span><h1>Tagesbilanz</h1>
+        <p>${which === "today" ? "Für heute wurde gestern kein Mittagessen gewählt." : "Sobald ihr euch für das Mittagessen von morgen entschieden habt, siehst du hier die Kalorien."}</p></div>
+        ${which === "tomorrow" ? `<button class="btn btn-primary btn-block" data-act="tab" data-v="results">Zu den Matches</button>` : ""}</section>`;
     }
     if (!body) {
-      return `<section class="screen scroll">${head}
-        <div class="page-head"><span class="eyebrow">Morgen gibt's ${esc(pickD.n)}</span><h1>Tagesbilanz</h1><p>Das Gericht hat ${kcalText(pickD.k)}. Mit ein paar Angaben zu dir rechnet Lunchly aus, wie viel du am Rest des Tages noch essen kannst, ohne zuzunehmen.</p></div>
+      return `<section class="screen scroll">${head}${seg}
+        <div class="page-head"><span class="eyebrow">${esc(dayLabel)}</span><h1>Tagesbilanz</h1><p>${esc(pickD.n)} hat ${kcalText(pickD.k)}. Mit ein paar Angaben zu dir rechnet Lunchly aus, wie viele Kalorien dir an diesem Tag noch bleiben, ohne zuzunehmen.</p></div>
         <button class="btn btn-primary btn-block" data-act="kcal-setup">Kalorien-Ziel einrichten</button></section>`;
     }
-    const m = computeMatches(day);
-    const dessert = m.desserts[0] && m.desserts[0].d;
+    // Ein gematchtes Dessert gehört zum Mittagessen dazu
+    const dessert = computeMatches(swipe).desserts[0];
+    const sweetD = dessert && dessert.d;
+    const log = st.kcalLog[eat] || [];
     const target = kcalTarget(body);
     const lunch = pickD.k;
-    const sweet = dessert && ui.withDessert ? dessert.k : 0;
-    const rest = target - lunch - sweet;
+    const sweet = sweetD ? sweetD.k : 0;
+    const logged = log.reduce((a, e) => a + e.k, 0);
+    const rest = target - lunch - sweet - logged;
     const pct = (v) => Math.max(0, Math.min(100, (v / target) * 100));
-    const seg = (cls, v, label) => v > 0 ? `<i class="seg ${cls}" style="flex-basis:${pct(v)}%" title="${label}: ${fmtNum(v)} kcal"></i>` : "";
-    const split = [["Frühstück", 0.3], ["Abendessen", 0.5], ["Snacks", 0.2]];
+    const bar = (cls, v, label) => v > 0 ? `<i class="seg ${cls}" style="flex-basis:${pct(v)}%" title="${label}: ${fmtNum(v)} kcal"></i>` : "";
+    const labels = ["Frühstück", "Snack", "Abendessen", "Getränk"];
     return `<section class="screen scroll">
       ${head}
-      <div class="page-head"><span class="eyebrow">Tagesbilanz für ${esc(fmtDay(addDays(day, 1)))}</span><h1>Dein Tag mit ${esc(pickD.n)}</h1></div>
+      ${seg}
+      <div class="page-head"><span class="eyebrow">${esc(dayLabel)}</span><h1>${esc(pickD.n)}${sweetD ? ` und ${esc(sweetD.n)}` : ""}</h1></div>
       <div class="kcal-hero">
-        <span class="kcal-big">${rest >= 0 ? fmtNum(rest) : 0} kcal</span>
-        <span class="hint">${rest >= 0 ? "kannst du am Rest des Tages noch essen" : "Das Mittagessen deckt deinen Tagesbedarf schon"}</span>
+        <span class="kcal-big">${fmtNum(Math.abs(rest))} kcal</span>
+        <span class="hint">${rest >= 0 ? "bleiben dir an diesem Tag noch" : "über deinem Tagesbedarf"}</span>
       </div>
-      <div class="kcal-bar" role="img" aria-label="Tagesbedarf ${fmtNum(target)} kcal: Mittagessen ${fmtNum(lunch)}, ${sweet ? `Dessert ${fmtNum(sweet)}, ` : ""}übrig ${fmtNum(Math.max(rest, 0))} kcal">
-        ${seg("lunch", lunch, "Mittagessen")}${seg("sweet", sweet, "Dessert")}${seg("rest", Math.max(rest, 0), "Übrig")}
+      <div class="kcal-bar" role="img" aria-label="Tagesbedarf ${fmtNum(target)} kcal: Mittagessen ${fmtNum(lunch)}${sweet ? `, Dessert ${fmtNum(sweet)}` : ""}${logged ? `, eingetragen ${fmtNum(logged)}` : ""}, übrig ${fmtNum(Math.max(rest, 0))} kcal">
+        ${bar("lunch", lunch, "Mittagessen")}${bar("sweet", sweet, "Dessert")}${bar("logged", logged, "Eingetragen")}${bar("rest", Math.max(rest, 0), "Übrig")}
       </div>
       <div class="legend">
         <span><i class="sw lunch"></i>Mittagessen <b>${fmtNum(lunch)}</b></span>
         ${sweet ? `<span><i class="sw sweet"></i>Dessert <b>${fmtNum(sweet)}</b></span>` : ""}
+        ${logged ? `<span><i class="sw logged"></i>Eingetragen <b>${fmtNum(logged)}</b></span>` : ""}
         <span><i class="sw rest"></i>Übrig <b>${fmtNum(Math.max(rest, 0))}</b></span>
         <span class="legend-total">Tagesbedarf <b>${fmtNum(target)} kcal</b></span>
       </div>
-      ${dessert ? `<button class="menu-row switch-row" data-act="kcal-dessert" aria-pressed="${ui.withDessert}"><span>Mit Dessert: ${esc(dessert.n)} (${kcalText(dessert.k)})</span><span class="switch" aria-hidden="true"></span></button>` : ""}
-      ${rest > 0 ? `<div class="stack"><div class="sec-title"><h2>So könntest du den Rest verteilen</h2></div>
-        <div class="split">${split.map(([l, f]) => `<div class="split-row"><span>${l}</span><b>${kcalText(rest * f)}</b></div>`).join("")}</div></div>`
-        : `<div class="empty"><strong>Halte den Rest des Tages leicht</strong><p class="hint">Gemüse, Salat oder eine klare Suppe passen gut zum Abend.</p></div>`}
-      <button class="btn btn-outline btn-block" data-act="kcal-setup">Angaben ändern</button>
+      ${!log.length && rest > 0 ? `<p class="hint">Zum Beispiel: Frühstück ${kcalText(rest * 0.3)} · Abendessen ${kcalText(rest * 0.5)} · Snacks ${kcalText(rest * 0.2)}</p>` : ""}
+
+      <div class="stack">
+        <div class="sec-title"><h2>Was hast du sonst gegessen?</h2></div>
+        ${log.length ? `<div class="split">${log.map((e) => `<div class="split-row"><span>${esc(e.label)}</span><span class="log-right"><b>${kcalText(e.k)}</b><button class="icon-btn sm" data-act="kcal-del" data-id="${e.id}" aria-label="${esc(e.label)} entfernen">${ICON.close}</button></span></div>`).join("")}</div>` : ""}
+        <div class="log-form">
+          <div class="chips slide">${labels.map((l) => `<button type="button" data-act="kcal-label" data-v="${l}" aria-pressed="${ui.kcalLabel === l}">${l}</button>`).join("")}</div>
+          <div class="log-row">
+            <div class="fieldset"><label><small>Kalorien</small><input id="log-k" inputmode="numeric" maxlength="4" placeholder="z. B. 350"></label></div>
+            <button class="btn btn-dark" data-act="kcal-add">Eintragen</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-outline btn-block" data-act="kcal-setup">Kalorien-Ziel ändern</button>
       <p class="disclaimer">Schätzwerte. Kalorien pro Portion schwanken je nach Rezept und Größe. Der Tagesbedarf ist mit der Mifflin-St-Jeor-Formel und deinem Aktivitätslevel geschätzt. Das ist keine Ernährungsberatung.</p>
     </section>`;
   }
@@ -1071,44 +1233,79 @@
     </div>`);
   }
 
+  // Match-Animation direkt in der App:
+  // Pinker Screen kommt aus der Kamera, Herz dreht sich von hinten heran und pocht, Schriftzug wird geschrieben.
+  // Beim Schließen zieht sich alles ins Herz zurück und das Herz fällt aus dem Bildschirm (leaveMatch).
+  const HEART_PATH = "M50 88 C 18 64, 4 46, 4 28 C 4 13, 15 3, 29 3 C 38 3, 45 8, 50 16 C 55 8, 62 3, 71 3 C 85 3, 96 13, 96 28 C 96 46, 82 64, 50 88 Z";
   function showMatch(d, sup) {
     buzz([20, 60, 30]);
     $("#toast").hidden = true; // nichts über der Match-Animation einblenden
-    const intro = !reduceMotion();
-    openSheet(`<div class="match-box fill" role="dialog" aria-modal="true" aria-label="Match">
-      <h2>It's a Lunch!</h2>
-      <p>${esc(pname(0))} und ${esc(pname(1))} haben beide Lust auf <b>${esc(d.n)}</b>${sup ? ", mit Heißhunger" : ""}.</p>
-      <div class="match-faces" aria-hidden="true">${avHTML(0, "big")}<span class="match-dish">${photo(d)}</span>${avHTML(1, "big")}</div>
-      ${baroHTML(d.h)}
-      <button class="btn btn-primary btn-pill" data-act="pick" data-id="${d.id}">Das gibt's morgen</button>
-      <button class="btn btn-outline btn-pill" data-act="close" data-autofocus>Weiter swipen</button>
-    </div>
-    ${intro ? `<div class="match-intro"><video muted playsinline autoplay preload="auto">
-      <source src="media/match-intro${dark ? "-dark" : ""}.webm" type="video/webm"><source src="media/match-intro${dark ? "-dark" : ""}.mp4" type="video/mp4"></video></div>` : ""}`,
-    `match-pop${intro ? " intro-on" : ""}`);
-    if (!intro) { heartBurst(); return; }
-    // Match-Animation (Remotion-Video) abspielen, danach in den Match-Screen überblenden
-    const layer = $(".match-intro", sheetRoot);
-    const video = $("video", layer);
-    let done = false;
-    const finish = () => {
-      if (done || !layer.isConnected) return;
-      done = true;
-      layer.classList.add("done");
-      layer.closest(".overlay").classList.remove("intro-on");
-      heartBurst();
-      setTimeout(() => layer.remove(), 400);
-    };
-    video.addEventListener("ended", finish);
-    video.addEventListener("error", finish, true);
-    layer.addEventListener("click", finish);
-    const p = video.play();
-    if (p && p.catch) p.catch(finish);
-    setTimeout(finish, 3800);
+    const floaters = Array.from({ length: 9 }, (_, i) =>
+      `<svg class="mp-float" viewBox="0 0 100 92" style="--x:${8 + ((i * 37) % 84)}%;--d:${(i * 0.43) % 3}s;--s:${14 + ((i * 7) % 16)}px"><path d="${HEART_PATH}"/></svg>`).join("");
+    openSheet(`<div class="mp${reduceMotion() ? " still" : ""}" role="dialog" aria-modal="true" aria-label="Match: ${esc(d.n)}">
+      <div class="mp-bg"></div>
+      <div class="mp-floaters" aria-hidden="true">${floaters}</div>
+      <div class="mp-stage">
+        <div class="mp-heart-wrap" aria-hidden="true">
+          <div class="mp-heart">
+            <svg viewBox="0 0 100 92" class="mp-heart-shape"><path d="${HEART_PATH}"/></svg>
+            <svg viewBox="0 0 64 64" class="mp-bowl">
+              <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+                <path d="M22 8 C 18 13, 26 17, 22 23"><animate attributeName="d" dur="1.4s" repeatCount="indefinite" values="M22 8 C 18 13, 26 17, 22 23; M22 8 C 26 13, 18 17, 22 23; M22 8 C 18 13, 26 17, 22 23"/></path>
+                <path d="M32 5 C 28 10, 36 14, 32 20"><animate attributeName="d" dur="1.4s" begin="-0.45s" repeatCount="indefinite" values="M32 5 C 28 10, 36 14, 32 20; M32 5 C 36 10, 28 14, 32 20; M32 5 C 28 10, 36 14, 32 20"/></path>
+                <path d="M42 8 C 38 13, 46 17, 42 23"><animate attributeName="d" dur="1.4s" begin="-0.9s" repeatCount="indefinite" values="M42 8 C 38 13, 46 17, 42 23; M42 8 C 46 13, 38 17, 42 23; M42 8 C 38 13, 46 17, 42 23"/></path>
+              </g>
+              <path d="M8 30 h48 a24 24 0 0 1 -48 0 z" fill="currentColor"/>
+            </svg>
+          </div>
+        </div>
+        <div class="mp-content">
+          <svg class="mp-title" viewBox="0 0 360 120" role="img" aria-label="It's a Lunch!">
+            <defs><clipPath id="mp-pen"><rect class="mp-pen" x="0" y="0" width="360" height="120"/></clipPath></defs>
+            <g transform="rotate(-5 180 60)">
+              <text x="180" y="80" text-anchor="middle" class="mp-text" clip-path="url(#mp-pen)">It's a Lunch!</text>
+              <path class="mp-swoosh" d="M44 102 C 130 90, 240 88, 326 96" pathLength="1"/>
+            </g>
+          </svg>
+          <div class="mp-body">
+            <p>${esc(pname(0))} und ${esc(pname(1))} haben beide Lust auf <b>${esc(d.n)}</b>${sup ? ", mit Heißhunger" : ""}.</p>
+            <div class="mp-faces">${avHTML(0, "md")}<span class="mp-dish">${photo(d)}</span>${avHTML(1, "md")}</div>
+            ${baroHTML(d.h)}
+            <button class="btn btn-primary btn-pill" data-act="pick" data-id="${d.id}">Das gibt's morgen</button>
+            <button class="btn btn-outline btn-pill" data-act="close" data-autofocus>Weiter swipen</button>
+          </div>
+        </div>
+      </div>
+    </div>`, "match-pop");
+    if (!reduceMotion()) {
+      setTimeout(() => {
+        const h = $(".mp-heart", sheetRoot);
+        if (!h || $(".mp.leaving", sheetRoot)) return;
+        const r = h.getBoundingClientRect();
+        heartBurst(r.left + r.width / 2, r.top + r.height / 2);
+      }, 1350);
+    }
+  }
+
+  // Ausblenden: alles zieht sich ins Herz zurück, dann fällt das Herz nach unten aus dem Bild
+  function leaveMatch(then) {
+    const mp = $(".mp", sheetRoot);
+    if (!mp || reduceMotion()) { closeSheet(); then(); return; }
+    if (mp.classList.contains("leaving")) return;
+    const heart = $(".mp-heart", mp).getBoundingClientRect();
+    const hx = heart.left + heart.width / 2, hy = heart.top + heart.height / 2;
+    const content = $(".mp-content", mp);
+    const cr = content.getBoundingClientRect();
+    mp.style.setProperty("--hx", `${hx}px`);
+    mp.style.setProperty("--hy", `${hy}px`);
+    content.style.transformOrigin = `${hx - cr.left}px ${hy - cr.top}px`;
+    mp.classList.add("leaving");
+    buzz(10);
+    setTimeout(() => { closeSheet(); then(); }, 1150);
   }
 
   // Herzregen beim Match (Canvas, ein kurzer Moment)
-  function heartBurst() {
+  function heartBurst(ox, oy) {
     if (reduceMotion()) return;
     const c = document.createElement("canvas");
     c.className = "burst";
@@ -1120,7 +1317,7 @@
     g.scale(dpr, dpr);
     const colors = ["#ff385c", "#ff6b85", "#fd267a", "#ff9a62", "#ffc1cf"];
     const parts = Array.from({ length: 46 }, () => ({
-      x: W / 2, y: H * 0.42, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 10 - 3,
+      x: ox != null ? ox : W / 2, y: oy != null ? oy : H * 0.42, vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 10 - 3,
       s: 7 + Math.random() * 10, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.2,
       c: colors[Math.floor(Math.random() * colors.length)],
     }));
@@ -1147,6 +1344,63 @@
     setTimeout(() => el.remove(), 1400);
   }
 
+  // ── Erinnerung um 18:00 ───────────────────────────────────
+  // Ploppt auf, wenn für morgen noch nicht fertig geswipt wurde. Läuft die App im Hintergrund
+  // und Mitteilungen sind erlaubt, kommt zusätzlich eine System-Benachrichtigung.
+  let reminderTimer = null;
+  function reminderDue() {
+    if (!st.profile || !st.pair || st.pair.pending || !st.settings.reminder) return false;
+    if (st.reminderShown === today() || nowDate().getHours() < REMINDER_HOUR) return false;
+    return dayState(today()).pos[me()] < deckFor(today()).length;
+  }
+  function reminderText() {
+    const ds = dayState(today());
+    const left = deckFor(today()).length - ds.pos[me()];
+    const o = pname(other(me()));
+    const partner = ds.known[other(me())] && ds.pos[other(me())] > 0 ? ` ${o} hat schon ${ds.pos[other(me())]} geswipt.` : "";
+    return { left, partner, o };
+  }
+  async function systemNotify(body) {
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) reg.showNotification("Lunchly: Was esst ihr morgen?", { body, icon: "icon.svg", badge: "icon.svg", tag: "lunchly-reminder" });
+      else new Notification("Lunchly: Was esst ihr morgen?", { body, icon: "icon.svg" });
+    } catch { /* Mitteilungen nicht verfügbar */ }
+  }
+  function checkReminder() {
+    if (!reminderDue()) return;
+    const view = ui.view || autoView();
+    const { left, partner } = reminderText();
+    if (document.visibilityState === "hidden") { systemNotify(`Noch ${left} Gerichte warten auf dich.${partner}`); st.reminderShown = today(); persist(); return; }
+    // Wer schon mitten im Swipen ist, braucht keine Erinnerung
+    if (ui.sheet || (view === "swipe" && dayState(today()).pos[me()] > 0)) { st.reminderShown = today(); persist(); return; }
+    st.reminderShown = today();
+    persist();
+    openSheet(`<div class="remind" role="dialog" aria-modal="true" aria-label="Erinnerung">
+      <svg class="remind-bowl" viewBox="0 0 64 64" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+          <path d="M22 8 C 18 13, 26 17, 22 23"><animate attributeName="d" dur="1.4s" repeatCount="indefinite" values="M22 8 C 18 13, 26 17, 22 23; M22 8 C 26 13, 18 17, 22 23; M22 8 C 18 13, 26 17, 22 23"/></path>
+          <path d="M32 5 C 28 10, 36 14, 32 20"><animate attributeName="d" dur="1.4s" begin="-0.45s" repeatCount="indefinite" values="M32 5 C 28 10, 36 14, 32 20; M32 5 C 36 10, 28 14, 32 20; M32 5 C 28 10, 36 14, 32 20"/></path>
+          <path d="M42 8 C 38 13, 46 17, 42 23"><animate attributeName="d" dur="1.4s" begin="-0.9s" repeatCount="indefinite" values="M42 8 C 38 13, 46 17, 42 23; M42 8 C 46 13, 38 17, 42 23; M42 8 C 38 13, 46 17, 42 23"/></path>
+        </g>
+        <path d="M8 30 h48 a24 24 0 0 1 -48 0 z" fill="currentColor"/>
+      </svg>
+      <span class="eyebrow">${pad(REMINDER_HOUR)}:00 · Erinnerung</span>
+      <h2>Was esst ihr morgen?</h2>
+      <p>Noch ${left} ${left === 1 ? "Gericht wartet" : "Gerichte warten"} auf dich.${esc(partner)} Swipe jetzt, damit euer Match für morgen steht.</p>
+      <button class="btn btn-primary btn-block" data-act="remind-go" data-autofocus>Jetzt swipen</button>
+      <button class="link-btn" data-act="close">Später</button>
+    </div>`, "remind-pop");
+  }
+  function scheduleReminder() {
+    clearTimeout(reminderTimer);
+    const now = nowDate();
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), REMINDER_HOUR, 0, 0);
+    const ms = at - now;
+    if (ms > 0 && ms < 24 * 3600 * 1000) reminderTimer = setTimeout(checkReminder, ms + 500);
+  }
+
   // ── Swipen ────────────────────────────────────────────────
   function commit(val) {
     const day = today();
@@ -1165,6 +1419,7 @@
     buzz(val === 2 ? [10, 40, 10] : 8);
     if (ds.pos[p] >= ids.length) bumpStreak(day);
     persist();
+    syncPushDay(day);
     const o = ds.sw[other(p)][i];
     const isMatch = val > 0 && o != null && o > 0;
     if (ds.pos[p] >= ids.length) {
@@ -1187,6 +1442,7 @@
     ds.sw[p][i] = null;
     ds.pos[p] = i;
     persist();
+    syncPushDay();
     render();
     toast("Letzter Swipe zurückgenommen");
   }
@@ -1223,7 +1479,7 @@
     };
     card.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || ui.busy) return;
-      dragging = true; moved = false; id = e.pointerId; sx = e.clientX; sy = e.clientY; dx = dy = 0;
+      dragging = true; ui.dragging = true; moved = false; id = e.pointerId; sx = e.clientX; sy = e.clientY; dx = dy = 0;
       card.setPointerCapture(id);
       card.classList.add("dragging");
     });
@@ -1241,7 +1497,7 @@
     });
     const end = (e) => {
       if (!dragging || e.pointerId !== id) return;
-      dragging = false;
+      dragging = false; ui.dragging = false;
       card.classList.remove("dragging");
       ["like", "nope", "super"].forEach((n) => arm(n, 0));
       if (!moved) { card.style.transform = ""; showDetail(card.dataset.id, true); return; }
@@ -1313,6 +1569,7 @@
       if (st.pair) {
         st.pair.players[me()].name = name === pname(other(me())) ? name + " 2" : name;
         if (st.pair.pending) { st.pair.pending = false; toast(`Mit ${pname(other(me()))} gekoppelt`); }
+        syncName().then(syncPull);
       }
       go(ui.view === "profile-edit" ? "me" : null);
     },
@@ -1324,6 +1581,7 @@
       st.pair = { seed: newSeed(), start: today(), players: [{ name: st.profile.name }, { name: partner }], me: 0, pending: false };
       st.days = {};
       go("invite");
+      syncCreatePair();
     },
     profile: () => go("profile-edit"),
     "paste-link": pasteLink,
@@ -1334,12 +1592,21 @@
     undo,
     info: () => { const c = $(".card.top", app); if (c) showDetail(c.dataset.id, true); },
     detail: (el) => showDetail(el.dataset.id, false),
-    close: () => { closeSheet(); if (ui.afterMatch) { const f = ui.afterMatch; ui.afterMatch = null; f(); } },
+    close: () => {
+      const after = () => { if (ui.afterMatch) { const f = ui.afterMatch; ui.afterMatch = null; f(); } };
+      if ($(".mp", sheetRoot)) { leaveMatch(after); return; }
+      closeSheet(); after();
+    },
     pick: (el) => {
-      setPick(today(), el.dataset.id);
-      ui.afterMatch = null;
-      go("results");
-      toast(`Morgen gibt's ${BY_ID.get(el.dataset.id).n}`);
+      const id = el.dataset.id;
+      const done = () => {
+        setPick(today(), id);
+        ui.afterMatch = null;
+        go("results");
+        toast(`Morgen gibt's ${BY_ID.get(id).n}`);
+      };
+      if ($(".mp", sheetRoot)) { leaveMatch(done); return; }
+      done();
     },
     tab: (el) => {
       ui.confirmReset = false;
@@ -1361,8 +1628,10 @@
       if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
       const note = $("#w-note", sheetRoot).value.trim();
       const id = el.dataset.id;
-      if (id) Object.assign(st.wish.find((w) => w.id === id), { title, url, note, kind: ui.wishKind });
-      else st.wish.unshift({ id: newSeed(), title, url, note, kind: ui.wishKind, dishId: el.dataset.dish || null, at: Date.now() });
+      let entry;
+      if (id) { entry = st.wish.find((w) => w.id === id); Object.assign(entry, { title, url, note, kind: ui.wishKind }); }
+      else { entry = { id: newSeed(), title, url, note, kind: ui.wishKind, dishId: el.dataset.dish || null, at: Date.now() }; st.wish.unshift(entry); }
+      syncWish(entry);
       ui.wishFilter = "alle";
       toast(id ? "Eintrag gespeichert" : "Im Wunschbuch gespeichert");
       go("wishbook");
@@ -1374,10 +1643,11 @@
       if (ui.confirmDelete !== id) { ui.confirmDelete = id; wishDetail(id); return; }
       st.wish = st.wish.filter((w) => w.id !== id);
       ui.confirmDelete = null;
+      syncWishDelete(id);
       toast("Eintrag gelöscht");
       go("wishbook");
     },
-    kcal: () => go("kcal"),
+    kcal: (el) => { ui.kcalDay = (el && el.dataset.v) || null; ui.kcalBack = ui.view || autoView(); go("kcal"); },
     "kcal-setup": () => { ui.backTo = ui.view || autoView(); go("kcal-setup"); },
     "kcal-back": () => go(ui.backTo === "kcal" ? "kcal" : "me"),
     "kcal-chip": (el) => {
@@ -1396,7 +1666,33 @@
       toast(`Dein Tagesbedarf: ${fmtNum(kcalTarget(body))} kcal`);
       go(ui.backTo === "kcal" ? "kcal" : "me");
     },
-    "kcal-dessert": () => { ui.withDessert = !ui.withDessert; render(); },
+    "remind-go": () => { closeSheet(); go("swipe"); },
+    reminder: async () => {
+      st.settings.reminder = !st.settings.reminder;
+      persist(); render();
+      if (st.settings.reminder) {
+        toast(`Erinnerung um ${pad(REMINDER_HOUR)}:00 ist an`);
+        try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* egal */ }
+        scheduleReminder();
+      } else toast("Erinnerung ist aus");
+    },
+    "kcal-day": (el) => { ui.kcalDay = el.dataset.v; render(); },
+    "kcal-label": (el) => {
+      ui.kcalLabel = el.dataset.v;
+      el.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === el)));
+    },
+    "kcal-add": () => {
+      const k = parseInt($("#log-k", app).value, 10);
+      if (!(k > 0 && k < 5000)) { toast("Bitte die Kalorien als Zahl eintragen."); $("#log-k", app).focus(); return; }
+      const eat = kcalDays()[ui.kcalDay || "tomorrow"].eat;
+      (st.kcalLog[eat] = st.kcalLog[eat] || []).push({ id: newSeed(), label: ui.kcalLabel, k });
+      persist(); render();
+    },
+    "kcal-del": (el) => {
+      const eat = kcalDays()[ui.kcalDay || "tomorrow"].eat;
+      st.kcalLog[eat] = (st.kcalLog[eat] || []).filter((e) => e.id !== el.dataset.id);
+      persist(); render();
+    },
     results: () => go("results"),
     favorites: () => openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="Lieblingsgerichte">
       <div class="menu-head"><strong>Lieblingsgerichte</strong><span class="hint">Je öfter ihr ein Gericht wählt, desto mehr Sterne bekommt es: ab 1, 2, 3, 5 und 8 Mal.</span></div>
@@ -1410,6 +1706,7 @@
       st.pair.players[me()].name = v === pname(other(me())) ? v + " 2" : v;
       st.pair.pending = false;
       go(null);
+      syncName().then(syncPull);
     },
     reset: () => {
       if (!ui.confirmReset) { ui.confirmReset = true; render(); return; }
@@ -1463,6 +1760,7 @@
   let lastDay = today();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && today() !== lastDay) { lastDay = today(); go(null); }
+    if (document.visibilityState === "visible") { syncPull(); scheduleReminder(); setTimeout(checkReminder, 400); }
   });
 
   // ── Start ─────────────────────────────────────────────────
@@ -1477,14 +1775,21 @@
   window.addEventListener("hashchange", importFromHash);
   if (!importFromHash()) render();
 
+  initSync();
+  if (syncActive()) syncPull();
+  setInterval(() => { if (document.visibilityState === "visible") syncPull(); }, 45000);
+  scheduleReminder();
+  setTimeout(checkReminder, reduceMotion() ? 400 : 1800); // nach dem Ladebildschirm
+
   // Ladebildschirm: kurz das dampfende Logo zeigen, dann ausblenden
   const splash = $("#splash");
   if (splash) {
     setTimeout(() => {
       splash.classList.add("out");
+      document.documentElement.classList.remove("booting"); // Karten-Animationen starten jetzt
       setTimeout(() => splash.remove(), 500);
     }, reduceMotion() ? 200 : 1400);
-  }
+  } else document.documentElement.classList.remove("booting");
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !L.embedded) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -1492,4 +1797,5 @@
 
   // Für Tests und Debugging: Tagesauswahl eines beliebigen Tages berechnen
   L.debugDeck = (seed, start, day) => dayEntry(seed, start, day);
+  L.debugSyncPull = () => syncPull();
 })();

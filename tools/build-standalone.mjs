@@ -16,7 +16,7 @@ const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) 
 const js = scripts.map((src) => `/* ${src} */\n${read(src)}`).join("\n");
 const body = html.match(/<body>([\s\S]*?)\n\s*<script/)[1].trim();
 
-const embedFlag = "window.LUNCHLY = window.LUNCHLY || { dishes: [], desserts: [] }; LUNCHLY.embedded = true;";
+const embedFlag = "window.LUNCHLY = window.LUNCHLY || { dishes: [], desserts: [] }; LUNCHLY.embedded = true; document.documentElement.classList.add(\"booting\");";
 const inner = `<title>Lunchly</title>
 <style>
 ${css}</style>

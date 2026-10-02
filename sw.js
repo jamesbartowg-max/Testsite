@@ -1,9 +1,9 @@
 /* Lunchly Service Worker – Network-first, Cache als Offline-Fallback */
-const CACHE = "lunchly-v13";
+const CACHE = "lunchly-v15";
 const ASSETS = [
-  "./", "index.html", "css/style.css", "js/app.js",
+  "./", "index.html", "css/style.css", "js/config.js", "js/app.js",
   "js/data/dishes-deutschland.js", "js/data/dishes-europa.js", "js/data/dishes-international.js", "js/data/desserts.js",
-  "manifest.webmanifest", "icon.svg", "media/match-intro.mp4", "media/match-intro.webm", "media/match-intro-dark.mp4", "media/match-intro-dark.webm", "fonts/Yellowtail.woff2", "fonts/DMSans.woff2",
+  "manifest.webmanifest", "icon.svg", "fonts/Yellowtail.woff2", "fonts/DMSans.woff2",
 ];
 
 self.addEventListener("install", (e) => {
@@ -30,5 +30,16 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html")))
+  );
+});
+
+// Tippen auf die 18-Uhr-Erinnerung öffnet Lunchly
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      const open = list.find((c) => "focus" in c);
+      return open ? open.focus() : self.clients.openWindow("./");
+    })
   );
 });

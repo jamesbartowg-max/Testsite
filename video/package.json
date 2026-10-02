@@ -5,8 +5,9 @@
   "scripts": {
     "studio": "remotion studio src/index.jsx",
     "render": "remotion render src/index.jsx MatchIntro ../media/match-intro.mp4 --codec=h264 --crf=26",
+    "render:dark": "remotion render src/index.jsx MatchIntroDark ../media/match-intro-dark.mp4 --codec=h264 --crf=26",
     "render:webm": "remotion render src/index.jsx MatchIntro ../media/match-intro.webm --codec=vp9 --crf=36",
-    "poster": "remotion still src/index.jsx MatchIntro ../media/match-intro.jpg --frame=40"
+    "poster": "remotion still src/index.jsx MatchIntro ../media/match-intro.jpg --frame=85"
   },
   "dependencies": {
     "@remotion/cli": "4.0.532",
