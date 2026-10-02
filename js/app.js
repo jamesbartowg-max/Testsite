@@ -2,19 +2,27 @@
  * Lunchly – Tinder fürs Mittagessen von morgen.
  *
  * Ablauf
- *   Ein Handy:   Person 1 swipt die Runde, gibt das Handy weiter, Person 2 swipt dieselbe Runde.
- *                Jedes Gericht, das beide mögen, ist ein Match (Popup sofort beim Swipen von Person 2).
- *   Zwei Handys: Beide bekommen über einen Code/Link dieselbe Runde (gleicher Seed = gleiche Karten).
- *                Die Swipes werden als kompakter Code ausgetauscht. Sind die Swipes der anderen Person
- *                bekannt, poppen Matches live auf.
+ *   Zwei Personen, jede auf dem eigenen Handy. Beim ersten Start koppelt man sich per Einladungs-Link.
+ *   Jeden Tag gibt es 15 Gerichte aus dem Pool von 150. Beide Handys berechnen dieselben 15 aus dem
+ *   gemeinsamen Kopplungs-Seed und dem Datum, ganz ohne Server.
+ *   Nach dem Swipen schickt man seine Swipes als Link/Code. Was beide mögen, ist ein Match fürs
+ *   Mittagessen am nächsten Tag. Sind die Swipes der anderen Person schon da, poppen Matches live auf.
  *
- * Dessert-Bonus: Zwischen die Gerichte werden zufällig (aber für beide identisch) Dessert-Karten gemischt.
- * Heißhunger:    Super-Like (3 pro Runde), zählt doppelt bei der Match-Rangfolge.
+ * Blacklist:     Gerichte der letzten BLACKLIST_DAYS Tage sind für die Tagesauswahl gesperrt.
+ * Dessert-Bonus: An manchen Tagen werden 1–2 Desserts zufällig (für beide identisch) eingemischt.
+ * Heißhunger:    Super-Like (SUPERS_PER_DAY pro Tag), zählt doppelt bei der Match-Rangfolge.
  * Histamin:      Jedes Gericht zeigt fest sein Histamin-Barometer (1–10). Bei Gleichstand gewinnt
  *                das histaminärmere Gericht.
  */
 (() => {
   "use strict";
+
+  const DAILY_DISHES = 15;
+  const BLACKLIST_DAYS = 7;
+  const SUPERS_PER_DAY = 1;
+  const KEEP_DAYS = 30;
+  const KEY = "lunchly.v3";
+  const CODE_PREFIX = "LY3.";
 
   const L = window.LUNCHLY;
   const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -22,11 +30,6 @@
   L.dishes.forEach((d) => { d.id = "d-" + slug(d.n); d.kind = "dish"; });
   L.desserts.forEach((d) => { d.id = "s-" + slug(d.n); d.kind = "dessert"; d.r = "dessert"; d.g = d.g || []; });
   const BY_ID = new Map([...L.dishes, ...L.desserts].map((d) => [d.id, d]));
-
-  const SUPERS_PER_ROUND = 3;
-  const SIZES = [20, 40, 75, 150];
-  const KEY = "lunchly.v2";
-  const CODE_PREFIX = "LY2.";
 
   // ── Helpers ───────────────────────────────────────────────
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -36,6 +39,15 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const initial = (name) => (Array.from(name.trim())[0] || "?").toUpperCase();
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Datum als lokaler Tagesschlüssel „YYYY-MM-DD“. LUNCHLY_TODAY überschreibt ihn für Tests.
+  const pad = (n) => String(n).padStart(2, "0");
+  const dayKey = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  const parseDay = (key) => { const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (key, n) => { const dt = parseDay(key); dt.setDate(dt.getDate() + n); return dayKey(dt); };
+  const today = () => window.LUNCHLY_TODAY || dayKey(new Date());
+  const fmtDay = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
+  const fmtShort = (key) => parseDay(key).toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
 
   const ICON = {
     nope: `<svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>`,
@@ -65,7 +77,7 @@
     toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
   }
 
-  // ── Seeded RNG → beide Geräte bekommen dieselbe Runde ─────
+  // ── Seeded RNG ────────────────────────────────────────────
   function hashSeed(str) {
     let h = 1779033703 ^ str.length;
     for (let i = 0; i < str.length; i++) {
@@ -92,53 +104,64 @@
     }
     return a;
   }
-  const newSeed = () => Math.random().toString(36).slice(2, 8);
+  const newSeed = () => Math.random().toString(36).slice(2, 10);
 
-  let deckCache = { key: "", ids: [] };
-  function buildDeck(seed, size) {
-    const key = `${seed}|${size}`;
-    if (deckCache.key === key) return deckCache.ids;
-    const rnd = mulberry32(hashSeed(seed));
-    const dishes = shuffle(L.dishes, rnd).slice(0, size);
-    const desserts = shuffle(L.desserts, rnd);
-    const ids = [];
-    let gap = 0, di = 0;
-    for (const d of dishes) {
-      ids.push(d.id);
-      gap++;
-      // „ab und zu“: frühestens nach 5 Gerichten, dann mit 14 % Chance pro Karte
-      if (gap >= 5 && di < desserts.length && rnd() < 0.14) {
-        ids.push(desserts[di++].id);
-        gap = 0;
+  // ── Tagesauswahl mit Blacklist ────────────────────────────
+  // Die Auswahl eines Tages hängt von den Vortagen ab (Blacklist). Deshalb wird ab dem Kopplungstag
+  // Tag für Tag durchgerechnet. Das ist deterministisch: Beide Handys kommen auf dieselben Karten.
+  const deckMemo = new Map();
+  function dayEntry(seed, start, day) {
+    const target = `${seed}|${day}`;
+    if (deckMemo.has(target)) return deckMemo.get(target);
+    const hist = [];
+    let d = start <= day ? start : day;
+    for (;;) {
+      const k = `${seed}|${d}`;
+      let entry = deckMemo.get(k);
+      if (!entry) {
+        const recent = hist.slice(-BLACKLIST_DAYS);
+        const blocked = new Set(recent.flatMap((e) => e.dishIds));
+        const blockedS = new Set(recent.flatMap((e) => e.dessertIds));
+        const rnd = mulberry32(hashSeed(k));
+        const dishIds = shuffle(L.dishes.filter((x) => !blocked.has(x.id)), rnd).slice(0, DAILY_DISHES).map((x) => x.id);
+        let pool = shuffle(L.desserts.filter((x) => !blockedS.has(x.id)), rnd);
+        if (!pool.length) pool = shuffle(L.desserts, rnd);
+        // „ab und zu“: an ca. 60 % der Tage ein Dessert, manchmal zwei
+        const count = rnd() < 0.6 ? (rnd() < 0.25 ? 2 : 1) : 0;
+        const ids = dishIds.slice();
+        const dessertIds = [];
+        for (let j = 0; j < count; j++) {
+          ids.splice(3 + Math.floor(rnd() * (ids.length - 3)), 0, pool[j].id);
+          dessertIds.push(pool[j].id);
+        }
+        entry = { ids, dishIds, dessertIds };
+        deckMemo.set(k, entry);
       }
+      hist.push(entry);
+      if (d === day) return entry;
+      d = addDays(d, 1);
     }
-    if (di === 0 && ids.length > 4) {
-      const at = 3 + Math.floor(rnd() * (ids.length - 3));
-      ids.splice(at, 0, desserts[0].id);
-    }
-    deckCache = { key, ids };
-    return ids;
   }
 
   // ── Zustand ───────────────────────────────────────────────
-  const saved = store.load();
-  const prefs = Object.assign({ names: ["", ""], mode: "one", size: 40 }, saved.prefs || {});
-  let S = saved.session || null; // laufende Runde
-  const ui = { screen: S ? S.screen : "start", busy: false, flashed: "", sheet: null, afterMatch: null };
+  // st.pair  = { seed, start, players: [{name}, {name}], me, pending }
+  // st.days  = { "YYYY-MM-DD": { sw: [[], []], pos: [0, 0], supers, known: [bool, bool], pick } }
+  const st = Object.assign({ pair: null, days: {}, draft: ["", ""] }, store.load());
+  const ui = { view: null, busy: false, flashed: "", sheet: null, afterMatch: null, confirmReset: false };
 
-  const persist = () => { if (S) S.screen = ui.screen; store.save({ prefs, session: S }); };
-  const deck = () => buildDeck(S.seed, S.size);
-  const cur = () => (S.mode === "one" ? S.turn : S.me); // wer gerade swipt
+  function persist() {
+    const cutoff = addDays(today(), -KEEP_DAYS);
+    Object.keys(st.days).forEach((k) => { if (k < cutoff) delete st.days[k]; });
+    store.save(st);
+  }
+  const P = () => st.pair;
+  const me = () => st.pair.me;
   const other = (p) => 1 - p;
-  const pname = (p) => S.players[p].name;
-
-  function makeSession(o) {
-    return {
-      v: 2, seed: o.seed || newSeed(), size: o.size, mode: o.mode,
-      players: o.players, me: o.me || 0, turn: 0,
-      sw: [[], []], pos: [0, 0], supers: [SUPERS_PER_ROUND, SUPERS_PER_ROUND],
-      known: [false, false], pick: null, screen: "swipe",
-    };
+  const pname = (p) => st.pair.players[p].name;
+  const deckFor = (day) => dayEntry(P().seed, P().start, day).ids;
+  function dayState(day) {
+    if (!st.days[day]) st.days[day] = { sw: [[], []], pos: [0, 0], supers: SUPERS_PER_DAY, known: [false, false], pick: null };
+    return st.days[day];
   }
 
   // ── Histamin ──────────────────────────────────────────────
@@ -214,7 +237,7 @@
     </article>`;
   }
 
-  // ── Codes für zwei Handys ─────────────────────────────────
+  // ── Codes zum Koppeln & Austauschen ───────────────────────
   const ALPH = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   function pack(arr, len) { // 3 Swipes (je 0..3) pro Zeichen
     let s = "";
@@ -240,11 +263,13 @@
   const b64d = (s) => new TextDecoder().decode(
     Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
 
+  // Ein Code koppelt die Handys und trägt optional die Swipes des heutigen Tages mit.
   function myCode() {
-    const p = S.me;
+    const day = today();
+    const ds = dayState(day);
     return CODE_PREFIX + b64e(JSON.stringify({
-      s: S.seed, n: S.size, w: p, p: S.players.map((pl) => pl.name),
-      k: pack(S.sw[p], deck().length), c: S.pos[p],
+      s: P().seed, a: P().start, w: me(), p: P().players.map((pl) => pl.name),
+      d: day, k: pack(ds.sw[me()], deckFor(day).length), c: ds.pos[me()],
     }));
   }
   function shareURL(code) {
@@ -253,11 +278,11 @@
     return base ? `${base}#lunch=${code}` : "";
   }
   function parseCode(raw) {
-    const m = String(raw || "").trim().match(/LY2\.[A-Za-z0-9_-]+/);
+    const m = String(raw || "").trim().match(/LY3\.[A-Za-z0-9_-]+/);
     if (!m) return null;
     try {
       const o = JSON.parse(b64d(m[0].slice(CODE_PREFIX.length)));
-      if (!o.s || !Array.isArray(o.p) || o.p.length !== 2) return null;
+      if (!o.s || !o.a || !Array.isArray(o.p) || o.p.length !== 2 || (o.w !== 0 && o.w !== 1)) return null;
       return o;
     } catch { return null; }
   }
@@ -265,35 +290,38 @@
   function importCode(raw) {
     const o = parseCode(raw);
     if (!o) { toast("Der Code ist unvollständig. Bitte komplett kopieren."); return false; }
-    const len = buildDeck(o.s, o.n).length;
-    if (S && S.mode === "two" && S.seed === o.s) {
-      if (o.w === S.me) { toast("Das ist dein eigener Code 😉"); return false; }
-      S.sw[o.w] = unpack(o.k, len);
-      S.pos[o.w] = o.c;
-      S.known[o.w] = true;
-      toast(`Swipes von ${pname(o.w)} geladen ✓`);
-      go(S.pos[S.me] >= deck().length ? "results" : ui.screen === "start" ? "swipe" : ui.screen);
-      return true;
+    const names = o.p.map((n) => String(n).slice(0, 20));
+    if (!st.pair || st.pair.seed !== o.s) {
+      st.pair = { seed: o.s, start: o.a, players: names.map((name) => ({ name })), me: other(o.w), pending: true };
+      st.days = {};
+    } else if (o.w === me()) {
+      toast("Das ist dein eigener Code 😉");
+      return false;
+    } else {
+      st.pair.players[o.w].name = names[o.w]; // Namensänderung der anderen Person übernehmen
     }
-    // Neue Runde als eingeladene Person
-    S = makeSession({
-      seed: o.s, size: o.n, mode: "two",
-      players: o.p.map((name) => ({ name: String(name).slice(0, 20) })), me: other(o.w),
-    });
-    S.sw[o.w] = unpack(o.k, len);
-    S.pos[o.w] = o.c;
-    S.known[o.w] = o.c > 0;
-    go("join");
+    if (o.d && o.c > 0) {
+      const ds = dayState(o.d);
+      const len = deckFor(o.d).length;
+      ds.sw[o.w] = unpack(o.k, len);
+      ds.pos[o.w] = Math.min(o.c, len);
+      ds.known[o.w] = true;
+      if (!st.pair.pending) toast(o.d === today() ? `Swipes von ${pname(o.w)} geladen ✓` : `Swipes vom ${fmtShort(o.d)} geladen`);
+    } else if (!st.pair.pending) {
+      toast(`Mit ${pname(o.w)} gekoppelt ✓`);
+    }
+    go(null);
     return true;
   }
 
   // ── Matches ───────────────────────────────────────────────
-  function computeMatches() {
-    const ids = deck();
+  function computeMatches(day) {
+    const ids = deckFor(day);
+    const ds = dayState(day);
     const all = [], near = [];
     let both = 0, agree = 0;
     ids.forEach((id, i) => {
-      const a = S.sw[0][i], b = S.sw[1][i];
+      const a = ds.sw[0][i], b = ds.sw[1][i];
       if (a == null || b == null) return;
       both++;
       if ((a > 0) === (b > 0)) agree++;
@@ -314,58 +342,61 @@
   }
 
   // ── Navigation & Rendering ────────────────────────────────
-  function go(screen) {
-    ui.screen = screen;
+  function autoView() {
+    if (!st.pair) return "setup";
+    if (st.pair.pending) return "join";
+    const day = today();
+    const ds = dayState(day);
+    if (ds.pos[me()] < deckFor(day).length) return "swipe";
+    return ds.known[other(me())] ? "results" : "share";
+  }
+
+  function go(view) {
+    ui.view = view;
+    ui.confirmReset = false;
     closeSheet();
     persist();
     render();
   }
 
   function render() {
-    if (!S && ui.screen !== "start") ui.screen = "start";
+    const view = ui.view || autoView();
     const fn = {
-      start: renderStart, swipe: renderSwipe, handover: renderHandover, invite: renderInvite,
-      share: renderShare, results: renderResults, join: renderJoin,
-    }[ui.screen] || renderStart;
+      setup: renderSetup, invite: renderInvite, join: renderJoin, swipe: renderSwipe,
+      share: renderShare, results: renderResults,
+    }[view] || renderSetup;
     app.innerHTML = fn();
-    if (ui.screen === "swipe") bindDrag();
+    if (view === "swipe") bindDrag();
     const focusEl = $("[data-autofocus]", app);
     if (focusEl) focusEl.focus({ preventScroll: true });
   }
 
-  function renderStart() {
+  function renderSetup() {
     const strip = ["it", "de", "asien", "amerika", "eu"].map((r, i) =>
       `<span class="reg-${r}">${["🍝", "🥨", "🍜", "🌮", "🥘"][i]}</span>`).join("");
-    const sizeBtns = SIZES.map((n) => `<button type="button" data-act="size" data-v="${n}" aria-pressed="${prefs.size === n}">${n === 150 ? "Alle 150" : `${n} Gerichte`}</button>`).join("");
-    const mode = (v, title, text) => `<button type="button" class="option" data-act="mode" data-v="${v}" aria-pressed="${prefs.mode === v}">
-      <strong>${title}</strong><span class="radio" aria-hidden="true"></span><span>${text}</span></button>`;
     return `<section class="screen scroll">
       <div class="start-head">${logo()}</div>
       <div class="hero">
         <div class="hero-strip" aria-hidden="true">${strip}</div>
         <h1>Was essen wir morgen Mittag?</h1>
-        <p>Swipt euch durch 150 Gerichte. Was euch beiden schmeckt, wird ein Match und steht für morgen fest.</p>
+        <p>Jeden Tag 15 Gerichte zum Swipen. Was euch beiden schmeckt, wird ein Match und steht für morgen fest.</p>
       </div>
 
       <div class="section">
-        <h2>Wer wählt aus?</h2>
+        <h2>So funktioniert's</h2>
+        <ol class="steps">
+          <li><span><b>Koppeln.</b> Du schickst deiner Lunch-Begleitung einmalig einen Link. Jede:r nutzt das eigene Handy.</span></li>
+          <li><span><b>Swipen.</b> Jeden Tag gibt es ${DAILY_DISHES} Gerichte aus ${L.dishes.length}. Was schon dran war, pausiert ${BLACKLIST_DAYS} Tage.</span></li>
+          <li><span><b>Matchen.</b> Schickt euch eure Swipes. Was ihr beide wollt, gibt's morgen.</span></li>
+        </ol>
+      </div>
+
+      <div class="section">
+        <h2>Wer seid ihr?</h2>
         <div class="fieldset">
-          <label><small>Person 1</small><input id="n0" maxlength="20" placeholder="Name" value="${esc(prefs.names[0])}" autocomplete="given-name"></label>
-          <label><small>Person 2</small><input id="n1" maxlength="20" placeholder="Name" value="${esc(prefs.names[1])}"></label>
+          <label><small>Dein Name</small><input id="n0" maxlength="20" placeholder="Name" value="${esc(st.draft[0])}" autocomplete="given-name"></label>
+          <label><small>Name deiner Lunch-Begleitung</small><input id="n1" maxlength="20" placeholder="Name" value="${esc(st.draft[1])}"></label>
         </div>
-      </div>
-
-      <div class="section">
-        <h2>Wie swipt ihr?</h2>
-        <div class="options">
-          ${mode("one", "Auf einem Handy", "Nacheinander swipen und das Handy weitergeben")}
-          ${mode("two", "Auf zwei Handys", "Link schicken, jede:r swipt für sich")}
-        </div>
-      </div>
-
-      <div class="section">
-        <h2>Wie viele Gerichte?</h2>
-        <div class="chips">${sizeBtns}</div>
       </div>
 
       <div class="baro-promo">
@@ -374,26 +405,80 @@
         <p>Von 1 (sehr niedrig) bis 10 (sehr hoch), mit Erklärung und Bestell-Tipp.</p></div>
       </div>
 
-      <button class="btn btn-primary btn-block" data-act="start">Los geht's</button>
+      <button class="btn btn-primary btn-block" data-act="setup">Koppeln & loslegen</button>
 
       <details class="panel">
-        <summary>Ich habe einen Lunchly-Code bekommen</summary>
-        <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY2.)"></textarea>
+        <summary>Ich habe eine Einladung bekommen</summary>
+        <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY3.)"></textarea>
         <button class="btn btn-dark btn-block" data-act="paste">Code laden</button>
       </details>
     </section>`;
   }
 
+  function sharePanel(title, text, invite = false) {
+    const code = myCode();
+    const url = shareURL(code);
+    const intro = invite
+      ? `${pname(me())} will mit dir jeden Tag das Mittagessen aussuchen 🍽️ Hier koppeln:`
+      : `Meine Lunchly-Swipes fürs Mittagessen morgen sind fertig 🍽️`;
+    const msg = `${intro}\n${url || code}`;
+    return `<div class="panel">
+      <strong>${title}</strong>
+      <p class="hint">${text}</p>
+      <div class="code-box" id="code-box">${esc(url || code)}</div>
+      <div class="row">
+        <button class="btn btn-dark" data-act="copy" data-v="${esc(url || code)}">Kopieren</button>
+        <a class="btn btn-outline" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
+        ${navigator.share ? `<button class="btn btn-outline" data-act="share" data-v="${esc(msg)}">Teilen…</button>` : ""}
+      </div>
+    </div>`;
+  }
+  function pastePanel(title) {
+    return `<div class="panel">
+      <strong>${title}</strong>
+      <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY3.)"></textarea>
+      <button class="btn btn-dark btn-block" data-act="paste">Code laden</button>
+    </div>`;
+  }
+
+  function renderInvite() {
+    const o = pname(other(me()));
+    return `<section class="screen scroll center-screen top">
+      ${logo()}
+      <div class="big-emoji" aria-hidden="true">💌</div>
+      <h1>${esc(o)} einladen</h1>
+      <p>Schick ${esc(o)} diesen Link. Danach bekommt ihr beide jeden Tag dieselben 15 Gerichte auf euer eigenes Handy.</p>
+      ${sharePanel("Einladungs-Link", "Das musst du nur einmal machen.", true)}
+      <button class="btn btn-primary btn-block" data-act="home" data-autofocus>Jetzt die Gerichte von heute swipen</button>
+    </section>`;
+  }
+
+  function renderJoin() {
+    const host = other(me());
+    return `<section class="screen scroll center-screen top">
+      ${logo()}
+      <div class="big-emoji" aria-hidden="true">🍽️</div>
+      <h1>${esc(pname(host))} sucht mit dir das Mittagessen aus</h1>
+      <p>Jeden Tag gibt es 15 Gerichte zum Swipen. Was ihr beide nach rechts swipt, gibt's am nächsten Tag.</p>
+      <div class="fieldset" style="width:100%;text-align:left">
+        <label><small>Dein Name</small><input id="join-name" maxlength="20" value="${esc(pname(me()))}"></label>
+      </div>
+      <button class="btn btn-primary btn-block" data-act="join" data-autofocus>Koppeln & loslegen</button>
+    </section>`;
+  }
+
   function renderSwipe() {
-    const ids = deck();
-    const p = cur();
-    const pos = S.pos[p];
-    if (pos >= ids.length) { setTimeout(finishTurn); return ""; }
+    const day = today();
+    const ids = deckFor(day);
+    const ds = dayState(day);
+    const p = me();
+    const pos = ds.pos[p];
+    if (pos >= ids.length) { setTimeout(() => go(null)); return ""; }
     const top = BY_ID.get(ids[pos]);
     const next = pos + 1 < ids.length ? BY_ID.get(ids[pos + 1]) : null;
-    const m = computeMatches();
+    const m = computeMatches(day);
     const count = m.dishes.length + m.desserts.length;
-    const flashKey = `${S.seed}:${p}:${pos}`;
+    const flashKey = `${day}:${pos}`;
     if (top.kind === "dessert" && ui.flashed !== flashKey) { ui.flashed = flashKey; setTimeout(bonusFlash, 60); }
     const pct = (pos / ids.length) * 100;
     return `<section class="screen" aria-label="Swipen">
@@ -414,94 +499,33 @@
       <div class="actions">
         <button class="act sm undo" data-act="undo" aria-label="Rückgängig" ${pos === 0 ? "disabled" : ""}>${ICON.undo}</button>
         <button class="act lg nope" data-act="nope" aria-label="Nö">${ICON.nope}</button>
-        <button class="act sm super" data-act="super" aria-label="Heißhunger (Super-Like), noch ${S.supers[p]}" ${S.supers[p] <= 0 ? "disabled" : ""}>${ICON.super}<span class="badge">${S.supers[p]}</span></button>
+        <button class="act sm super" data-act="super" aria-label="Heißhunger (Super-Like), noch ${ds.supers}" ${ds.supers <= 0 ? "disabled" : ""}>${ICON.super}<span class="badge">${ds.supers}</span></button>
         <button class="act lg like" data-act="like" aria-label="Lecker">${ICON.like}</button>
         <button class="act sm info" data-act="info" aria-label="Infos zum Gericht">${ICON.info}</button>
       </div>
-      <p class="swipe-hint">${pos + 1} von ${ids.length} · ← Nö · Lecker → · ↑ Heißhunger</p>
-    </section>`;
-  }
-
-  function renderHandover() {
-    const ids = deck();
-    const likes = S.sw[0].filter((v) => v > 0).length;
-    return `<section class="screen center-screen">
-      <div class="match-faces" aria-hidden="true"><span class="av big p0">${esc(initial(pname(0)))}</span><span class="match-dish reg-de" style="width:84px;height:84px;font-size:40px">📱</span><span class="av big p1">${esc(initial(pname(1)))}</span></div>
-      <h1>Fertig, ${esc(pname(0))}!</h1>
-      <p>Du hast ${likes} von ${ids.length} Karten gelikt. Gib das Handy jetzt an ${esc(pname(1))}. Nicht spicken 🙈</p>
-      <button class="btn btn-primary btn-block" data-act="takeover" data-autofocus>Ich bin ${esc(pname(1))}, los geht's</button>
-    </section>`;
-  }
-
-  function sharePanel(title, text, invite = false) {
-    const code = myCode();
-    const url = shareURL(code);
-    const intro = invite
-      ? `${pname(S.me)} will mit dir das Mittagessen für morgen aussuchen 🍽️ Swipe mit:`
-      : `Meine Lunchly-Swipes für morgen sind fertig 🍽️ Hier sind sie:`;
-    const msg = `${intro}\n${url || code}`;
-    return `<div class="panel">
-      <strong>${title}</strong>
-      <p class="hint">${text}</p>
-      <div class="code-box" id="code-box">${esc(url || code)}</div>
-      <div class="row">
-        <button class="btn btn-dark" data-act="copy" data-v="${esc(url || code)}">Kopieren</button>
-        <a class="btn btn-outline" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">WhatsApp</a>
-        ${navigator.share ? `<button class="btn btn-outline" data-act="share" data-v="${esc(msg)}">Teilen…</button>` : ""}
-      </div>
-    </div>`;
-  }
-  function pastePanel(title) {
-    return `<div class="panel">
-      <strong>${title}</strong>
-      <textarea class="input" id="paste" placeholder="Code oder Link hier einfügen (beginnt mit LY2.)"></textarea>
-      <button class="btn btn-dark btn-block" data-act="paste">Code laden</button>
-    </div>`;
-  }
-
-  function renderInvite() {
-    const o = pname(other(S.me));
-    return `<section class="screen scroll center-screen top">
-      <div class="big-emoji" aria-hidden="true">💌</div>
-      <h1>${esc(o)} einladen</h1>
-      <p>Schick ${esc(o)} diesen Link. Ihr bekommt dieselben Gerichte und swipt jede:r auf dem eigenen Handy.</p>
-      ${sharePanel("Einladung", "Wer zuerst fertig ist, schickt danach den Ergebnis-Code. Dann erscheinen die Matches bei der anderen Person live.", true)}
-      <button class="btn btn-primary btn-block" data-act="go-swipe" data-autofocus>Ich swipe schon mal los</button>
+      <p class="swipe-hint">${top.kind === "dessert" ? "🍰 Bonus-Karte" : `Gericht ${ids.slice(0, pos + 1).filter((x) => BY_ID.get(x).kind === "dish").length} von ${DAILY_DISHES}`} · ← Nö · Lecker → · ↑ Heißhunger</p>
     </section>`;
   }
 
   function renderShare() {
-    const o = pname(other(S.me));
-    const m = S.known[other(S.me)] ? computeMatches() : null;
+    const day = today();
+    const o = pname(other(me()));
+    const ds = dayState(day);
+    const m = ds.known[other(me())] ? computeMatches(day) : null;
     return `<section class="screen scroll center-screen top">
+      <header class="topbar" style="width:100%"><span class="left"></span>${logo()}<span class="right"><button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button></span></header>
       <div class="big-emoji" aria-hidden="true">📨</div>
-      <h1>Fertig, ${esc(pname(S.me))}!</h1>
-      <p>Schick ${esc(o)} jetzt deinen Ergebnis-Code. Sobald ${esc(o)} den eigenen Code zurückschickt, seht ihr, was es morgen gibt.</p>
-      ${sharePanel("Dein Ergebnis-Code", `${esc(o)} öffnet den Link oder fügt den Code bei Lunchly ein.`)}
-      ${pastePanel(`Code von ${esc(o)} einfügen`)}
+      <h1>Fertig für heute, ${esc(pname(me()))}!</h1>
+      <p>Schick ${esc(o)} deine Swipes. Sobald ${esc(o)} die eigenen zurückschickt, seht ihr, was es am ${esc(fmtDay(addDays(day, 1)))} gibt.</p>
+      ${sharePanel("Deine Swipes von heute", `${esc(o)} öffnet den Link oder fügt den Code bei Lunchly ein.`)}
+      ${pastePanel(`Swipes von ${esc(o)} einfügen`)}
       ${m ? `<button class="btn btn-primary btn-block" data-act="results">Zwischenstand: ${m.dishes.length + m.desserts.length} Matches</button>` : ""}
     </section>`;
   }
 
-  function renderJoin() {
-    const host = other(S.me);
-    const n = deck().length;
-    const done = S.pos[host];
-    return `<section class="screen scroll center-screen top">
-      ${logo()}
-      <div class="big-emoji" aria-hidden="true">🍽️</div>
-      <h1>${esc(pname(host))} sucht mit dir das Mittagessen für morgen aus</h1>
-      <p>${n} Karten, inklusive Dessert-Bonus. ${done ? `${esc(pname(host))} hat schon ${done} davon geswipt. Matches siehst du live.` : "Was ihr beide nach rechts swipt, wird ein Match."}</p>
-      <div class="fieldset" style="width:100%;text-align:left">
-        <label><small>Dein Name</small><input id="join-name" maxlength="20" value="${esc(pname(S.me))}"></label>
-      </div>
-      <button class="btn btn-primary btn-block" data-act="join" data-autofocus>Los geht's</button>
-    </section>`;
-  }
-
-  function itemHTML(m, extra = "") {
+  function itemHTML(m, pick, extra = "") {
     const d = m.d;
-    return `<button class="item${S.pick === d.id ? " picked" : ""}" data-act="detail" data-id="${d.id}">
+    return `<button class="item${pick === d.id ? " picked" : ""}" data-act="detail" data-id="${d.id}">
       <span class="em reg-${d.r}" aria-hidden="true">${d.e}</span>
       <span style="min-width:0"><span class="nm">${esc(d.n)}${m.sup ? " ⭐" : ""}</span><br><span class="meta">${d.f} ${esc(d.o)}${extra}</span></span>
       <span class="h" style="background:hsl(${histHue(d.h)} 62% 42%)" aria-label="Histamin ${d.h} von 10">H ${d.h}</span>
@@ -509,20 +533,25 @@
   }
 
   function renderResults() {
-    const m = computeMatches();
-    const o = pname(other(S.me));
-    const partnerMissing = S.mode === "two" && !S.known[other(S.me)];
-    const pickD = S.pick ? BY_ID.get(S.pick) : m.dishes[0] ? m.dishes[0].d : null;
+    const day = today();
+    const ds = dayState(day);
+    const m = computeMatches(day);
+    const o = pname(other(me()));
+    const iDone = ds.pos[me()] >= deckFor(day).length;
+    const partnerMissing = !ds.known[other(me())];
+    const pickD = ds.pick ? BY_ID.get(ds.pick) : m.dishes[0] ? m.dishes[0].d : null;
+    const eyebrow = `<span class="eyebrow">Mittagessen für ${esc(fmtDay(addDays(day, 1)))}</span>`;
     let head;
-    if (partnerMissing) head = `<span class="eyebrow">Fast geschafft</span><h1>Es fehlen noch die Swipes von ${esc(o)}</h1>`;
-    else if (m.dishes.length) head = `<span class="eyebrow">Mittagessen für morgen</span><h1>${m.dishes.length} Match${m.dishes.length === 1 ? "" : "es"}${m.desserts.length ? ` + ${m.desserts.length} Dessert` : ""}</h1>`;
-    else head = `<span class="eyebrow">Mittagessen für morgen</span><h1>Noch kein Match</h1>`;
+    if (partnerMissing) head = `${eyebrow}<h1>Es fehlen noch die Swipes von ${esc(o)}</h1>`;
+    else if (!iDone) head = `${eyebrow}<h1>Zwischenstand: ${m.dishes.length} Match${m.dishes.length === 1 ? "" : "es"}</h1>`;
+    else if (m.dishes.length) head = `${eyebrow}<h1>${m.dishes.length} Match${m.dishes.length === 1 ? "" : "es"}${m.desserts.length ? ` + ${m.desserts.length} Dessert` : ""}</h1>`;
+    else head = `${eyebrow}<h1>Heute kein Match</h1>`;
     if (m.agree != null && !partnerMissing) head += `<span class="agree">Ihr wart euch bei <b>${m.agree} %</b> der ${m.both} Karten einig</span>`;
 
     const winner = pickD ? (() => {
       const f = fitText(pickD.h);
       return `<article class="winner">
-        <div class="winner-img reg-${pickD.r}"><span class="badge">${S.pick ? "🍽️ Morgen gibt's" : "🏆 Top-Match"}</span><span class="emoji" aria-hidden="true">${pickD.e}</span></div>
+        <div class="winner-img reg-${pickD.r}"><span class="badge">${ds.pick ? "🍽️ Morgen gibt's" : "🏆 Top-Match"}</span><span class="emoji" aria-hidden="true">${pickD.e}</span></div>
         <div class="winner-meta">
           <h2>${esc(pickD.n)}</h2>
           <span class="sub">${pickD.f} ${esc(pickD.o)} · ${esc(pickD.t)}</span>
@@ -530,7 +559,7 @@
         ${baroHTML(pickD.h)}
         <span class="fit" style="color:hsl(${f.hue} 60% var(--hl))">${f.t}</span>
         <div class="stack-v">
-          ${S.pick ? "" : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
+          ${ds.pick ? "" : `<button class="btn btn-primary btn-block" data-act="pick" data-id="${pickD.id}">Das gibt's morgen</button>`}
           <button class="btn btn-outline btn-block" data-act="detail" data-id="${pickD.id}">Infos & Bestell-Tipp</button>
         </div>
       </article>`;
@@ -539,18 +568,16 @@
     return `<section class="screen scroll">
       <header class="topbar"><span class="left"></span>${logo()}<span class="right"><button class="icon-btn" data-act="menu" aria-label="Menü">${ICON.menu}</button></span></header>
       <div class="res-head">${head}</div>
-      ${partnerMissing ? sharePanel("Dein Ergebnis-Code", `Schick ihn ${esc(o)}. Dann sieht ${esc(o)} die Matches auch.`) + pastePanel(`Code von ${esc(o)} einfügen`) : ""}
+      ${!iDone ? `<button class="btn btn-primary btn-block" data-act="home">Weiter swipen</button>` : ""}
+      ${partnerMissing && iDone ? sharePanel("Deine Swipes von heute", `Schick sie ${esc(o)}. Dann sieht ${esc(o)} die Matches auch.`) + pastePanel(`Swipes von ${esc(o)} einfügen`) : ""}
       ${winner}
       ${m.dishes.length > 1 ? `<button class="btn btn-dark btn-pill btn-block" data-act="roulette">🎲 Lunch-Roulette: Zufall entscheidet</button>` : ""}
-      ${m.dishes.length ? `<div class="stack-v"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x)).join("")}</div></div>` : ""}
-      ${m.desserts.length ? `<div class="stack-v"><div class="sec-title"><h2>🍰 Dessert-Matches</h2><span>Histamin</span></div><div class="list">${m.desserts.map((x) => itemHTML(x)).join("")}</div></div>` : ""}
-      ${!partnerMissing && !m.dishes.length ? `<div class="empty"><div class="big-emoji" aria-hidden="true">🥲</div><strong>Diesmal keine Einigung.</strong><p class="disclaimer">Unten stehen Gerichte, die wenigstens eine Person wollte. Oder ihr startet eine neue Runde.</p></div>` : ""}
-      ${!partnerMissing && m.near.length && m.dishes.length < 3 ? `<div class="stack-v"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
-      ${S.mode === "two" && !partnerMissing ? sharePanel("Ergebnis teilen", `Damit ${esc(o)} die Matches auch sieht, schick deinen Code noch einmal.`) : ""}
-      <div class="row">
-        <button class="btn btn-primary" data-act="new-round">Neue Runde</button>
-        <button class="btn btn-outline" data-act="new-game">Neu starten</button>
-      </div>
+      ${m.dishes.length ? `<div class="stack-v"><div class="sec-title"><h2>Alle Matches</h2><span>Histamin</span></div><div class="list" id="match-list">${m.dishes.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
+      ${m.desserts.length ? `<div class="stack-v"><div class="sec-title"><h2>🍰 Dessert-Matches</h2><span>Histamin</span></div><div class="list">${m.desserts.map((x) => itemHTML(x, ds.pick)).join("")}</div></div>` : ""}
+      ${!partnerMissing && iDone && !m.dishes.length ? `<div class="empty"><div class="big-emoji" aria-hidden="true">🥲</div><strong>Diesmal keine Einigung.</strong><p class="disclaimer">Unten stehen Gerichte, die wenigstens eine Person wollte. Morgen gibt es 15 neue Gerichte.</p></div>` : ""}
+      ${!partnerMissing && m.near.length && m.dishes.length < 3 ? `<div class="stack-v"><div class="sec-title"><h2>Kompromiss-Ideen</h2><span>Histamin</span></div><div class="list">${m.near.map((x) => itemHTML(x, ds.pick, ` · nur ${esc(pname(x.by))}`)).join("")}</div></div>` : ""}
+      ${!partnerMissing && iDone ? sharePanel("Ergebnis teilen", `Falls ${esc(o)} deine Swipes noch nicht hat, schick sie noch einmal.`) : ""}
+      <p class="hint" style="color:var(--muted)">Morgen gibt es 15 neue Gerichte. Die heutigen pausieren ${BLACKLIST_DAYS} Tage.</p>
       <p class="disclaimer">Das Histamin-Barometer ist ein Richtwert. Er basiert auf typischen Zutaten, angelehnt an die SIGHI-Verträglichkeitsliste. Rezepte und Verträglichkeit sind unterschiedlich. Das ist keine medizinische Beratung.</p>
     </section>`;
   }
@@ -593,18 +620,18 @@
   }
 
   function showMenu() {
+    const view = ui.view || autoView();
     const items = [];
-    if (S) {
-      if (ui.screen !== "results") items.push(`<button class="btn btn-ghost btn-block" data-act="results">Matches ansehen</button>`);
-      if (S.mode === "two") {
-        items.push(`<button class="btn btn-ghost btn-block" data-act="go-invite">Einladung / Code teilen</button>`);
-        items.push(pastePanel(`Code von ${esc(pname(other(S.me)))} einfügen`));
-      }
-      items.push(`<button class="btn btn-ghost btn-block" data-act="new-round">Neue Runde (neue Karten)</button>`);
+    if (st.pair && !st.pair.pending) {
+      if (view !== "results") items.push(`<button class="btn btn-ghost btn-block" data-act="results">Matches für morgen</button>`);
+      if (view !== "swipe" && view !== "share") items.push(`<button class="btn btn-ghost btn-block" data-act="home">Zurück zu heute</button>`);
+      items.push(pastePanel(`Swipes von ${esc(pname(other(me())))} einfügen`));
+      items.push(`<button class="btn btn-ghost btn-block" data-act="invite">Einladungs-Link erneut teilen</button>`);
+      items.push(`<button class="btn btn-ghost btn-block" data-act="reset" style="color:var(--nope)">${ui.confirmReset ? "Wirklich entkoppeln? Nochmal tippen" : "Kopplung aufheben"}</button>`);
     }
-    items.push(`<button class="btn btn-ghost btn-block" data-act="new-game">Neu starten</button>`);
     openSheet(`<div class="sheet menu-sheet" role="dialog" aria-modal="true" aria-label="Menü">
       ${logo()}
+      ${st.pair && !st.pair.pending ? `<p class="hint" style="color:var(--muted)">Gekoppelt mit ${esc(pname(other(me())))} · täglich ${DAILY_DISHES} Gerichte · Pause ${BLACKLIST_DAYS} Tage</p>` : ""}
       <div class="stack-v">${items.join("")}</div>
       <button class="link-btn" data-act="close" data-autofocus>Schließen</button>
     </div>`);
@@ -631,41 +658,39 @@
 
   // ── Swipen ────────────────────────────────────────────────
   function commit(val) {
-    const ids = deck();
-    const p = cur();
-    const i = S.pos[p];
+    const day = today();
+    const ids = deckFor(day);
+    const ds = dayState(day);
+    const p = me();
+    const i = ds.pos[p];
     if (i >= ids.length) return;
     if (val === 2) {
-      if (S.supers[p] <= 0) { toast("Keine Heißhunger-Joker mehr in dieser Runde"); val = 1; }
-      else S.supers[p]--;
+      if (ds.supers <= 0) { toast("Heute kein Heißhunger-Joker mehr"); val = 1; }
+      else ds.supers--;
     }
-    S.sw[p][i] = val;
-    S.pos[p] = i + 1;
+    ds.sw[p][i] = val;
+    ds.pos[p] = i + 1;
     persist();
-    const o = S.sw[other(p)][i];
+    const o = ds.sw[other(p)][i];
     const isMatch = val > 0 && o != null && o > 0;
-    if (S.pos[p] >= ids.length) {
+    if (ds.pos[p] >= ids.length) {
       // Letzte Karte: Popup zeigen, danach weiter (kein Re-Render, sonst verschwindet das Popup)
-      if (isMatch) { showMatch(BY_ID.get(ids[i]), val === 2 || o === 2); ui.afterMatch = finishTurn; return; }
-      finishTurn();
+      if (isMatch) { showMatch(BY_ID.get(ids[i]), val === 2 || o === 2); ui.afterMatch = () => go(null); return; }
+      go(null);
       return;
     }
     render();
     if (isMatch) showMatch(BY_ID.get(ids[i]), val === 2 || o === 2);
   }
 
-  function finishTurn() {
-    if (S.mode === "one") go(S.turn === 0 ? "handover" : "results");
-    else go(S.known[other(S.me)] && S.pos[other(S.me)] >= deck().length ? "results" : "share");
-  }
-
   function undo() {
-    const p = cur();
-    const i = S.pos[p] - 1;
+    const ds = dayState(today());
+    const p = me();
+    const i = ds.pos[p] - 1;
     if (i < 0) return;
-    if (S.sw[p][i] === 2) S.supers[p]++;
-    S.sw[p][i] = null;
-    S.pos[p] = i;
+    if (ds.sw[p][i] === 2) ds.supers++;
+    ds.sw[p][i] = null;
+    ds.pos[p] = i;
     persist();
     render();
     toast("Rückgängig ↺");
@@ -675,7 +700,7 @@
     if (ui.busy) return;
     const card = $(".card.top", app);
     if (!card) return;
-    if (val === 2 && S.supers[cur()] <= 0) { toast("Keine Heißhunger-Joker mehr in dieser Runde"); return; }
+    if (val === 2 && dayState(today()).supers <= 0) { toast("Heute kein Heißhunger-Joker mehr"); return; }
     ui.busy = true;
     const w = window.innerWidth, h = window.innerHeight;
     const [tx, ty, rot] = val === 0 ? [-w * 1.2, 40, -24] : val === 1 ? [w * 1.2, 40, 24] : [0, -h, 0];
@@ -712,7 +737,7 @@
       if (Math.abs(dx) < 6 && Math.abs(dy) < 6) { card.style.transform = ""; showDetail(card.dataset.id, true); return; }
       if (dx > 110) fly(1);
       else if (dx < -110) fly(0);
-      else if (dy < -130 && Math.abs(dx) < 80 && S.supers[cur()] > 0) fly(2);
+      else if (dy < -130 && Math.abs(dx) < 80 && dayState(today()).supers > 0) fly(2);
       else {
         card.style.transform = "";
         Object.values(stamps).forEach((s) => { s.style.opacity = 0; });
@@ -724,7 +749,8 @@
 
   // ── Roulette ──────────────────────────────────────────────
   function roulette() {
-    const m = computeMatches().dishes;
+    const day = today();
+    const m = computeMatches(day).dishes;
     const list = $("#match-list", app);
     if (!list || m.length < 2) return;
     const weights = m.map((x) => x.score * ((11 - x.d.h) / 10)); // leichter Vorteil für histaminarme Gerichte
@@ -738,7 +764,7 @@
     const tick = () => {
       items.forEach((el, j) => el.classList.toggle("spin", j === k % items.length));
       if (k >= steps) {
-        S.pick = m[win].d.id;
+        dayState(day).pick = m[win].d.id;
         persist();
         setTimeout(() => { render(); toast(`Morgen gibt's: ${m[win].d.n} 🎉`); }, 500);
         return;
@@ -750,11 +776,6 @@
   }
 
   // ── Aktionen ──────────────────────────────────────────────
-  function readStartForm() {
-    const n0 = $("#n0"), n1 = $("#n1");
-    if (n0) prefs.names = [n0.value.trim(), n1.value.trim()];
-  }
-
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -770,23 +791,17 @@
     }
   }
 
-  function startGame() {
-    readStartForm();
-    const names = [prefs.names[0] || "Person 1", prefs.names[1] || "Person 2"];
-    if (names[0] === names[1]) names[1] += " 2";
-    S = makeSession({ size: prefs.size, mode: prefs.mode, players: names.map((name) => ({ name })) });
-    go(S.mode === "two" ? "invite" : "swipe");
-  }
-
-  function newRound() {
-    S = makeSession({ size: S.size, mode: S.mode, players: S.players, me: S.me });
-    go(S.mode === "two" ? "invite" : "swipe");
+  function setup() {
+    const n0 = $("#n0").value.trim() || "Ich";
+    let n1 = $("#n1").value.trim() || "Lunch-Begleitung";
+    if (n0 === n1) n1 += " 2";
+    st.pair = { seed: newSeed(), start: today(), players: [{ name: n0 }, { name: n1 }], me: 0, pending: false };
+    st.days = {};
+    go("invite");
   }
 
   const actions = {
-    size: (el) => { prefs.size = +el.dataset.v; readStartForm(); persist(); render(); },
-    mode: (el) => { prefs.mode = el.dataset.v; readStartForm(); persist(); render(); },
-    start: startGame,
+    setup,
     paste: () => { const t = $("#paste", sheetRoot) || $("#paste", app); if (t) importCode(t.value); },
     like: () => { closeSheet(); fly(1); },
     nope: () => { closeSheet(); fly(0); },
@@ -795,22 +810,30 @@
     info: () => { const c = $(".card.top", app); if (c) showDetail(c.dataset.id, true); },
     detail: (el) => showDetail(el.dataset.id, false),
     close: () => { closeSheet(); if (ui.afterMatch) { const f = ui.afterMatch; ui.afterMatch = null; f(); } },
-    pick: (el) => { S.pick = el.dataset.id; ui.afterMatch = null; go("results"); toast(`Morgen gibt's: ${BY_ID.get(S.pick).n} 🎉`); },
+    pick: (el) => {
+      dayState(today()).pick = el.dataset.id;
+      ui.afterMatch = null;
+      go("results");
+      toast(`Morgen gibt's: ${BY_ID.get(el.dataset.id).n} 🎉`);
+    },
     results: () => go("results"),
+    home: () => go(null),
+    invite: () => go("invite"),
     menu: showMenu,
-    takeover: () => { S.turn = 1; go("swipe"); },
-    "go-swipe": () => go(S.pos[cur()] >= deck().length ? "share" : "swipe"),
-    "go-invite": () => go(S.pos[S.me] >= deck().length ? "share" : "invite"),
     join: () => {
       const v = $("#join-name").value.trim();
-      if (v) S.players[S.me].name = v === pname(other(S.me)) ? v + " 2" : v;
-      go("swipe");
+      if (v) st.pair.players[me()].name = v === pname(other(me())) ? v + " 2" : v;
+      st.pair.pending = false;
+      go(null);
+    },
+    reset: () => {
+      if (!ui.confirmReset) { ui.confirmReset = true; showMenu(); return; }
+      st.pair = null; st.days = {};
+      go(null);
     },
     copy: (el) => copy(el.dataset.v),
     share: (el) => { navigator.share({ title: "Lunchly", text: el.dataset.v }).catch(() => {}); },
     roulette,
-    "new-round": newRound,
-    "new-game": () => { S = null; go("start"); },
   };
 
   document.addEventListener("click", (e) => {
@@ -823,28 +846,42 @@
   });
 
   document.addEventListener("input", (e) => {
-    if (e.target.id === "n0" || e.target.id === "n1") { readStartForm(); persist(); }
+    if (e.target.id === "n0" || e.target.id === "n1") {
+      st.draft = [$("#n0").value, $("#n1").value];
+      persist();
+    }
   });
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && ui.sheet) { actions.close(); return; }
-    if (ui.screen !== "swipe" || ui.sheet || /input|textarea/i.test(e.target.tagName)) return;
+    if ((ui.view || autoView()) !== "swipe" || ui.sheet || /input|textarea/i.test(e.target.tagName)) return;
     const map = { ArrowLeft: "nope", ArrowRight: "like", ArrowUp: "super", i: "info", Backspace: "undo", z: "undo" };
     const act = map[e.key];
     if (act) { e.preventDefault(); actions[act](); }
   });
 
+  // Neuer Tag, während die App offen ist → automatisch auf die neue Tagesauswahl wechseln
+  let lastDay = today();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && today() !== lastDay) { lastDay = today(); go(null); }
+  });
+
   // ── Start ─────────────────────────────────────────────────
-  let hashCode = null;
-  try { hashCode = decodeURIComponent(location.hash || "").match(/lunch=(LY2\.[A-Za-z0-9_-]+)/); } catch { /* kaputter Link */ }
-  if (hashCode) {
+  // Lunchly-Links tragen den Code im Hash. Auch prüfen, wenn ein Link bei schon offener App ankommt.
+  function importFromHash() {
+    let hit = null;
+    try { hit = decodeURIComponent(location.hash || "").match(/lunch=(LY3\.[A-Za-z0-9_-]+)/); } catch { /* kaputter Link */ }
+    if (!hit) return false;
     try { history.replaceState(null, "", location.pathname + location.search); } catch { /* egal */ }
-    if (!importCode(hashCode[1])) render();
-  } else {
-    render();
+    return importCode(hit[1]);
   }
+  window.addEventListener("hashchange", importFromHash);
+  if (!importFromHash()) render();
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http") && !L.embedded) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+
+  // Für Tests und Debugging: Tagesauswahl eines beliebigen Tages berechnen
+  L.debugDeck = (seed, start, day) => dayEntry(seed, start, day);
 })();

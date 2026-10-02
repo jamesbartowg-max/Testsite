@@ -1,18 +1,31 @@
 # Lunchly 🍽️
 
-**Tinder fürs Mittagessen von morgen.** Zwei Personen swipen durch 150 Gerichte. Was beide nach rechts swipen, ist ein **Match** und landet morgen auf dem Teller.
+**Tinder fürs Mittagessen von morgen.** Zwei Personen swipen jeden Tag auf ihrem eigenen Handy durch 15 Gerichte. Was beide nach rechts swipen, ist ein **Match** und landet morgen auf dem Teller.
 
 ## Features
 
-- **150 Gerichte** von Hausmannskost über Pasta & Pizza bis Asien und Tex-Mex. Jede Karte hat Herkunft & Geschichte, eine Besonderheit, eine witzige Tagline und Tags (veggie, vegan, scharf …)
-- **Histamin-Barometer (1–10) bei jedem Gericht**, fest angezeigt. In der Detailansicht gibt es eine Tachonadel, eine Erklärung, woher der Wert kommt, und einen Bestell-Tipp („ohne Parmesan“, „Sauce weglassen“ …)
-- **Dessert-Bonus-Swipes:** 25 Desserts werden ab und zu zufällig in die Runde gemischt, für beide Personen an derselben Stelle
-- **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 3 pro Runde), Rückgängig, Match-Popup
-- **Zwei Spielmodi**
-  - *Ein Handy:* Person 1 swipt und gibt das Handy weiter. Person 2 sieht Matches live.
-  - *Zwei Handys:* Link oder Code per WhatsApp schicken. Beide bekommen dieselbe Runde (gleicher Seed), die Swipes werden als kurzer Code ausgetauscht. **Kein Server, kein Login.**
-- **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Einigkeits-Score, Dessert-Matches und Kompromiss-Ideen
+- **Pool von 150 Gerichten** (Hausmannskost, Pasta & Pizza, Asien, Tex-Mex …). Jede Karte hat Herkunft & Geschichte, eine Besonderheit, eine witzige Tagline und Tags (veggie, vegan, scharf …)
+- **15 Gerichte pro Tag:** Ein Zufallsgenerator stellt jeden Tag 15 Gerichte zusammen
+- **Blacklist:** Gerichte, die schon dran waren, pausieren 7 Tage (`BLACKLIST_DAYS` in `js/app.js`) und kommen erst danach wieder in den Zufallsgenerator
+- **Ein Handy pro Person:** Einmal per Einladungs-Link koppeln. Beide Handys berechnen aus dem gemeinsamen Kopplungs-Seed und dem Datum **dieselben 15 Gerichte**, ganz ohne Server oder Login
+- **Swipes austauschen:** Nach dem Swipen schickt man seine Swipes als Link (z. B. per WhatsApp). Was beide mögen, ist ein Match fürs Mittagessen am nächsten Tag. Sind die Swipes der anderen Person schon da, poppen Matches live auf
+- **Histamin-Barometer (1–10) bei jedem Gericht**, fest angezeigt, mit Tachonadel, Erklärung und Bestell-Tipp
+- **Dessert-Bonus-Swipes:** An manchen Tagen werden 1–2 von 25 Desserts zufällig eingemischt
+- **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 1 pro Tag), Rückgängig, Match-Popup
+- **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Kompromiss-Ideen
 - Design im Airbnb/Tinder-Stil, Light- und Dark-Mode, PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
+
+## Einstellungen
+
+Oben in `js/app.js`:
+
+| Konstante | Standard | Bedeutung |
+|---|---|---|
+| `DAILY_DISHES` | 15 | Gerichte pro Tag |
+| `BLACKLIST_DAYS` | 7 | So viele Tage pausiert ein Gericht, nachdem es dran war |
+| `SUPERS_PER_DAY` | 1 | Heißhunger-Super-Likes pro Tag |
+
+Wichtig: Beide Handys müssen dieselbe App-Version und dieselben Einstellungen haben, sonst unterscheiden sich die Tagesauswahlen.
 
 ## Starten
 
