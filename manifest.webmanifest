@@ -1,14 +1,14 @@
 {
   "name": "Lunchly",
   "short_name": "Lunchly",
-  "description": "Tinder fürs Mittagessen: swipen, matchen, essen. Mit Histamin-Barometer.",
+  "description": "Tinder fürs Mittagessen von morgen: swipen, matchen, essen. Mit Histamin-Barometer.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f2f6f1",
-  "theme_color": "#23965a",
+  "background_color": "#ffffff",
+  "theme_color": "#ff385c",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]

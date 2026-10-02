@@ -1,19 +1,18 @@
 # Lunchly 🍽️
 
-**Tinder fürs Mittagessen.** Zwei Personen swipen durch 150 Gerichte aus aller Welt. Wenn beide nach rechts swipen, ist es ein **Lunch-Match**.
+**Tinder fürs Mittagessen von morgen.** Zwei Personen swipen durch 150 Gerichte. Was beide nach rechts swipen, ist ein **Match** und landet morgen auf dem Teller.
 
 ## Features
 
-- **150 Gerichte** aus Europa, Asien, Orient, Afrika und Amerika. Jede Karte hat Herkunft & Geschichte, eine Besonderheit, eine witzige Tagline und Tags (veggie, vegan, scharf …)
+- **150 Gerichte** von Hausmannskost über Pasta & Pizza bis Asien und Tex-Mex. Jede Karte hat Herkunft & Geschichte, eine Besonderheit, eine witzige Tagline und Tags (veggie, vegan, scharf …)
+- **Histamin-Barometer (1–10) bei jedem Gericht**, fest angezeigt. In der Detailansicht gibt es eine Tachonadel, eine Erklärung, woher der Wert kommt, und einen Bestell-Tipp („ohne Parmesan“, „Sauce weglassen“ …)
 - **Dessert-Bonus-Swipes:** 25 Desserts werden ab und zu zufällig in die Runde gemischt, für beide Personen an derselben Stelle
-- **Histamin-Barometer (1–10)** auf jeder Karte. In der Detailansicht gibt es eine Tachonadel, eine Erklärung, woher der Wert kommt, und einen Bestell-Tipp („ohne Parmesan“, „Sauce weglassen“ …). Für die Person mit Histamin-Intoleranz: ✓ tauglich / ≈ mit Anpassung / ✗ eher nicht
-- **Optionaler Histamin-Filter:** nur Gerichte bis Stufe X. Standard: aus, alle essen normal und sehen trotzdem den Wert
-- **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 3 pro Runde), Rückgängig, „It's a Match“-Popup
+- **Tinder-Logik:** Swipe links (Nö), rechts (Lecker), hoch (★ Heißhunger = Super-Like, 3 pro Runde), Rückgängig, Match-Popup
 - **Zwei Spielmodi**
   - *Ein Handy:* Person 1 swipt und gibt das Handy weiter. Person 2 sieht Matches live.
-  - *Zwei Handys:* Einladungs-Link oder Code per WhatsApp schicken. Beide bekommen dieselbe Runde (gleicher Seed), die Swipes werden als kurzer Code ausgetauscht. **Kein Server, kein Login.**
-- **Ergebnis:** Top-Match (bei Gleichstand gewinnt das histaminärmere Gericht), Lunch-Roulette, Kompatibilitäts-Score, Dessert-Matches und Kompromiss-Ideen, falls es kein Match gibt
-- PWA: installierbar auf dem Homescreen, funktioniert offline, Light- und Dark-Mode, Tastatur (← → ↑ i ⌫)
+  - *Zwei Handys:* Link oder Code per WhatsApp schicken. Beide bekommen dieselbe Runde (gleicher Seed), die Swipes werden als kurzer Code ausgetauscht. **Kein Server, kein Login.**
+- **Ergebnis:** Top-Match (Heißhunger zählt doppelt, bei Gleichstand gewinnt das histaminärmere Gericht), „Das gibt's morgen“, Lunch-Roulette, Einigkeits-Score, Dessert-Matches und Kompromiss-Ideen
+- Design im Airbnb/Tinder-Stil, Light- und Dark-Mode, PWA (installierbar, offline), Tastatur (← → ↑ i ⌫)
 
 ## Starten
 
@@ -23,7 +22,7 @@ Reine statische Web-App ohne Build-Step:
 npx serve .        # oder: python3 -m http.server
 ```
 
-Danach http://localhost:3000 öffnen. Für GitHub Pages reicht es, den Branch zu veröffentlichen.
+Für GitHub Pages reicht es, den Branch zu veröffentlichen.
 
 **Single-File-Version** (alles in einer HTML-Datei, z. B. zum Verschicken):
 
@@ -34,16 +33,18 @@ node tools/build-standalone.mjs   # → dist/lunchly.html
 ## Struktur
 
 ```
-index.html              App-Shell
-css/style.css           Design (Tokens, Light/Dark)
-js/app.js               Logik: Deck, Swipes, Matching, Codes, Rendering
-js/data/dishes-*.js     150 Gerichte (Europa, Asien, Welt)
-js/data/desserts.js     25 Dessert-Bonus-Karten
-sw.js, manifest…        PWA / Offline
-tools/                  Build-Skript für die Single-File-Version
+index.html                        App-Shell
+css/style.css                     Design (Tokens, Light/Dark)
+js/app.js                         Logik: Deck, Swipes, Matching, Codes, Rendering
+js/data/dishes-deutschland.js     Hausmannskost DE/AT/CH (60)
+js/data/dishes-europa.js          Italien, Europa, Orient (46)
+js/data/dishes-international.js   Asien & Amerika (44)
+js/data/desserts.js               25 Dessert-Bonus-Karten
+sw.js, manifest.webmanifest       PWA / Offline
+tools/build-standalone.mjs        Build-Skript für die Single-File-Version
 ```
 
-Ein Gericht hinzufügen: einfach ein Objekt in `js/data/dishes-*.js` ergänzen (Schlüssel stehen oben in `dishes-europa.js`).
+Ein Gericht hinzufügen oder ändern: einfach das Objekt in der passenden `js/data/dishes-*.js` bearbeiten (die Schlüssel stehen oben in `dishes-deutschland.js`).
 
 ## Hinweis zum Histamin-Barometer
 
