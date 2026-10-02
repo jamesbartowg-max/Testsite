@@ -251,6 +251,22 @@
     </svg>`;
   }
 
+  // Kleine Barometer-Skizze für die Startseite; die Nadel schwingt per CSS hin und her
+  function gaugeMini() {
+    const cx = 60, cy = 62, r = 46;
+    const pt = (deg) => { const a = (deg * Math.PI) / 180; return [(cx + r * Math.cos(a)).toFixed(1), (cy + r * Math.sin(a)).toFixed(1)]; };
+    let segs = "";
+    for (let i = 0; i < 10; i++) {
+      const [x0, y0] = pt(180 + i * 18 + 2), [x1, y1] = pt(180 + (i + 1) * 18 - 2);
+      segs += `<path d="M${x0} ${y0} A${r} ${r} 0 0 1 ${x1} ${y1}" stroke="${histColor(i + 1)}" stroke-width="12" fill="none"/>`;
+    }
+    return `<svg class="gauge-mini" viewBox="0 0 120 72" aria-hidden="true">
+      ${segs}
+      <g class="needle"><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 34}" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></g>
+      <circle cx="${cx}" cy="${cy}" r="6" fill="currentColor"/>
+    </svg>`;
+  }
+
   // ── Karten ────────────────────────────────────────────────
   const TAGS = { veggie: "Vegetarisch", vegan: "Vegan", scharf: "Scharf", fisch: "Fisch & Meer", deftig: "Deftig", leicht: "Leicht" };
   const tagsHTML = (d) => d.g.length ? `<div class="tags">${d.g.map((g) => `<span class="tag">${esc(TAGS[g] || g)}</span>`).join("")}</div>` : "";
@@ -441,18 +457,23 @@
         <p>Jeden Tag ${DAILY_DISHES} Gerichte zum Swipen. Was euch beiden schmeckt, steht für morgen fest.</p>
       </div>
 
-      <div class="section">
-        <h2>So funktioniert's</h2>
+      <details class="section fold">
+        <summary><h2>So funktioniert's</h2></summary>
         <ol class="steps">
           <li><div><strong>Koppeln</strong><span>Du schickst deiner Lunch-Begleitung einmal einen Link. Jede Person nutzt das eigene Handy.</span></div></li>
           <li><div><strong>Swipen</strong><span>Jeden Tag gibt es ${DAILY_DISHES} Gerichte aus ${L.dishes.length}. Was schon dran war, pausiert ${BLACKLIST_DAYS} Tage.</span></div></li>
           <li><div><strong>Matchen</strong><span>Ihr schickt euch eure Swipes. Was ihr beide wollt, gibt es am nächsten Tag.</span></div></li>
         </ol>
-      </div>
+      </details>
 
       <div class="section">
-        <h2>Histamin-Barometer</h2>
-        <p class="hint">Jedes Gericht hat einen Wert von 1 bis 10, mit Erklärung und Bestell-Tipp.</p>
+        <div class="baro-intro">
+          <div class="stack" style="gap:6px">
+            <h2>Histamin-Barometer</h2>
+            <p class="hint">Jedes Gericht hat einen Wert von 1 bis 10, mit Erklärung und Bestell-Tipp.</p>
+          </div>
+          ${gaugeMini()}
+        </div>
         <div class="sample-baro">
           ${samples.map((d) => `<div class="row-item"><span>${esc(d.n)}</span>${barHTML(d.h)}</div>`).join("")}
         </div>

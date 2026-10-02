@@ -259,6 +259,25 @@ textarea.input:focus { outline: 0; box-shadow: inset 0 0 0 2px var(--ink); }
 
 .section { display: grid; gap: 14px; padding-top: 24px; border-top: 1px solid var(--line-soft); }
 .section h2 { font-size: 20px; }
+
+/* Ausklappbare Sektion („So funktioniert's“) */
+.section.fold { display: block; }
+.fold summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary::after {
+  content: ""; flex: none; width: 9px; height: 9px; margin-right: 6px;
+  border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink);
+  transform: rotate(45deg); transition: transform .2s;
+}
+.fold[open] summary::after { transform: rotate(-135deg); }
+.fold .steps { margin-top: 18px; animation: fold-in .25s ease; }
+@keyframes fold-in { from { opacity: 0; transform: translateY(-6px); } }
+
+/* Barometer-Skizze neben der Überschrift */
+.baro-intro { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 16px; align-items: center; }
+.gauge-mini { width: 104px; height: auto; color: var(--ink); overflow: visible; }
+.gauge-mini .needle { transform-box: view-box; transform-origin: 60px 62px; animation: needle 4.5s ease-in-out infinite; }
+@keyframes needle { 0%, 100% { transform: rotate(-62deg); } 50% { transform: rotate(58deg); } }
 .hint { font-size: 14px; color: var(--ink-2); }
 
 .panel { border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
